@@ -4,25 +4,110 @@ import env from './env.js';
 let prismaInstance = null;
 
 /**
- * Retrieves the Prisma Client database singleton instance.
- * Ensures only one connection pool exists throughout the application lifecycle.
+ * Initializes and configures the Prisma Client database singleton.
+ * Sets query logging options dynamically based on the current environment.
  * 
- * @function getPrismaClient
- * @returns {PrismaClient} Instantiated database connector client
+ * @function getPrismaInstance
+ * @returns {PrismaClient} Instantiated database connection pool client
  */
-export function getPrismaClient() {
+function getPrismaInstance() {
   if (!prismaInstance) {
+    const isDev = env.NODE_ENV === 'development';
+    
     prismaInstance = new PrismaClient({
       datasources: {
         db: {
           url: env.DATABASE_URL,
         },
       },
-      log: env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      // Logs raw SQL queries and warnings only during local development runs
+      log: isDev 
+        ? [
+            { emit: 'event', level: 'query' },
+            { emit: 'stdout', level: 'error' },
+            { emit: 'stdout', level: 'warn' }
+          ]
+        : [
+            { emit: 'stdout', level: 'error' }
+          ],
     });
+
+    // Handle query logging telemetry in development environment
+    if (isDev) {
+      prismaInstance.$on('query', (event) => {
+        console.log(`[Database Query] SQL: ${event.query} | Duration: ${event.duration}ms`);
+      });
+    }
   }
+
   return prismaInstance;
 }
 
-export const prisma = getPrismaClient();
+export const prisma = getPrismaInstance();
+
+// =========================================================================
+// 📘 REPOSITORY INTEGRATION GUIDELINE
+// =========================================================================
+/**
+ * REPOSITORY GUIDELINES:
+ * All database CRUD operations must be encapsulated inside clean Repository files.
+ * Modifying service files must not make direct Prisma queries.
+ *
+ * Example Repository Layout:
+ * 
+ * ```javascript
+ * import { prisma } from '../../config/database.js';
+ * 
+ * export class DocumentRepository {
+ *   static async findById(id) {
+ *     return prisma.document.findUnique({ where: { id } });
+ *   }
+ * }
+ * ```
+ */
+
+// =========================================================================
+// 📘 PRISMA TRANSACTION (ACID) GUIDELINE
+// =========================================================================
+/**
+ * TRANSACTION GUIDELINES:
+ * For concurrent operations that depend on atomicity (e.g. Checkout checks, version promotions),
+ * use Prisma's transactional APIs.
+ * 
+ * 1. Standard Batch (Parallel updates):
+ * ```javascript
+ * const [updatedDoc, newAuditLog] = await prisma.$transaction([
+ *   prisma.document.update(...),
+ *   prisma.auditLog.create(...)
+ * ]);
+ * ```
+ * 
+ * 2. Interactive Transactions (Sequential logic dependent on database checks):
+ * ```javascript
+ * await prisma.$transaction(async (tx) => {
+ *   const doc = await tx.document.findUnique({ where: { id } });
+ *   if (doc.isLocked) throw new Error('Locked');
+ *   await tx.document.update(...);
+ * });
+ * ```
+ */
+
+// =========================================================================
+// 📘 DATABASE MIGRATION & SEED WORKFLOWS
+// =========================================================================
+/**
+ * MIGRATION WORKFLOW:
+ * 1. Modify the `prisma/schema.prisma` file to add models/relations.
+ * 2. Generate and run the migration against PostgreSQL:
+ *    `npx prisma migrate dev --name <migration_name>`
+ * 3. In production, execute the generated migrations:
+ *    `npx prisma migrate deploy`
+ * 
+ * SEED WORKFLOW:
+ * Populate base configurations and admin user records:
+ * 1. Setup mock profiles inside `prisma/seed.js`.
+ * 2. Execute the seed runner:
+ *    `npx prisma db seed`
+ */
+
 export default prisma;
