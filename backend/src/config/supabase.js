@@ -1,38 +1,67 @@
+import { createClient } from '@supabase/supabase-js';
 import env from './env.js';
-// Placeholder: Activate import once '@supabase/supabase-js' is integrated
-// import { createClient } from '@supabase/supabase-js';
-
-let supabaseInstance = null;
 
 /**
- * Retrieves the Supabase connection client singleton.
- * Prepares auth schemas and storage transactions connection pools.
+ * Storage Bucket identifiers utilized by the platform.
  * 
- * @function getSupabaseClient
- * @returns {Object} supabase connection client instance placeholder
+ * @type {Readonly<{DOCUMENTS: string, PREVIEWS: string, AUDITS: string}>}
  */
-export function getSupabaseClient() {
-  if (!supabaseInstance) {
-    // supabaseInstance = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
-    
-    // Placeholder client mock object
-    supabaseInstance = {
+export const STORAGE_BUCKETS = Object.freeze({
+  DOCUMENTS: 'mc-documents',
+  PREVIEWS: 'mc-previews',
+  AUDITS: 'mc-audits-archive',
+});
+
+let supabaseAnonInstance = null;
+let supabaseAdminInstance = null;
+
+/**
+ * Retrieves the standard Anon Supabase Client singleton.
+ * Configured with the public anon key. Safe for client-facing identity checks.
+ * 
+ * @function getSupabaseAnonClient
+ * @returns {import('@supabase/supabase-js').SupabaseClient} Anon Supabase Client
+ */
+export function getSupabaseAnonClient() {
+  if (!supabaseAnonInstance) {
+    supabaseAnonInstance = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
       auth: {
-        api: 'Supabase Auth Gateway Placeholder'
+        persistSession: false,
+        autoRefreshToken: false,
       },
-      storage: {
-        from: (bucket) => ({
-          upload: async (path, file) => console.log(`Uploading ${path} to ${bucket}`),
-          getPublicUrl: (path) => ({ publicUrl: `${env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` })
-        })
-      }
-    };
-    
-    console.log('Supabase Connection client singleton initialized (Placeholder mode)');
+    });
+    console.log('Supabase Anon Client singleton initialized.');
   }
-  
-  return supabaseInstance;
+  return supabaseAnonInstance;
 }
 
-export const supabase = getSupabaseClient();
-export default supabase;
+/**
+ * Retrieves the privileged Admin Supabase Client singleton.
+ * Configured with the service role key. Bypass RLS (Row Level Security) rules.
+ * STRICTLY owned by the backend; must never be leaked to clients.
+ * Used for admin operations such as document deletes, lock overrides, and signed url generation.
+ * 
+ * @function getSupabaseAdminClient
+ * @returns {import('@supabase/supabase-js').SupabaseClient} Service Role Admin Supabase Client
+ */
+export function getSupabaseAdminClient() {
+  if (!supabaseAdminInstance) {
+    supabaseAdminInstance = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    console.log('Supabase Admin Client singleton initialized.');
+  }
+  return supabaseAdminInstance;
+}
+
+export const supabaseAnon = getSupabaseAnonClient();
+export const supabaseAdmin = getSupabaseAdminClient();
+
+export default {
+  supabaseAnon,
+  supabaseAdmin,
+  STORAGE_BUCKETS,
+};

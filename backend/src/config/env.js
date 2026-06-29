@@ -13,6 +13,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SUPABASE_JWT_SECRET: z.string().min(1),
   BCRYPT_ROUNDS: z.coerce.number().int().default(12),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),

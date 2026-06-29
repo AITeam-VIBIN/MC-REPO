@@ -1,6 +1,6 @@
 # Project Memory Bank: brain.md
 ## System Name: MITCON Credential Digital File Storage System (BCD-FSS)
-**Document Version:** 1.0.0  
+**Document Version:** 1.2.0  
 **Last Updated:** June 29, 2026  
 
 This document serves as the persistent memory, architectural blueprint, and technical documentation bank for all engineers working on the **MITCON Credential Digital File Storage System (BCD-FSS)**.
@@ -206,7 +206,7 @@ The following files have been created in the `backend/` project workspace:
 ### 6.1. Configuration Layer (`src/config/`)
 * **[env.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/env.js):** Environment variable verification and schema parsing.
 * **[database.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/database.js):** Exports the Prisma database connection client singleton.
-* **[supabase.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/supabase.js):** Initializes and exports the Supabase client wrapper.
+* **[supabase.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/supabase.js):** Initializes and exports the Supabase client wrapper. Defines bucket storage identifiers.
 * **[redis.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/redis.js):** Sets up and exports the Redis Client singleton.
 * **[bullmq.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/bullmq.js):** Defines BullMQ queue names, default retries, and job backoff limits.
 * **[logger.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/logger.js):** Centralized Pino client configurations.
@@ -219,5 +219,61 @@ The following files have been created in the `backend/` project workspace:
 * **[errorLogger.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/middleware/errorLogger.js):** Global exception stack trace logging filter.
 
 ### 6.3. Application Bootstrap
-* **[app.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/app.js):** Express application configuration, payload limit parsers, route mounts, and global boundaries registrations.
+* **[app.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/app.js):** Express application configuration, payload limit parsers, route mounts, and global error formatters.
 * **[server.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/server.js):** The HTTP server network bootstrapper. Sets up process signal captures (`SIGINT`, `SIGTERM`) to trigger graceful shutdowns.
+
+### 6.4. Database ORM Foundation (`prisma/`)
+* **[schema.prisma](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/prisma/schema.prisma):** Foundational configuration defining standard PostgreSQL datasource and generator.
+* **[seed.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/prisma/seed.js):** Data populator runner template placeholder.
+
+### 6.5. Infrastructure Services (`src/services/`)
+* **[storage.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/services/storage/storage.service.js):** Wraps storage operations (signed URLs, moves, deletes) executing against Supabase buckets.
+
+---
+
+## 7. Core Database Architecture Concepts
+
+### 7.1. How Prisma Generates SQL
+Prisma does not execute query parsing dynamically on the Node.js event loop thread. Instead, queries (e.g. `prisma.user.findMany()`) are compiled into an Abstract Syntax Tree (AST) inside Node.js. This AST is sent directly to Prisma's internal query engine compiled in **Rust**. The engine maps the AST against the schema mapping targets and translates it into highly optimized, parameterized native SQL queries, executing them against PostgreSQL and returning hydrated JSON back.
+
+### 7.2. Why Prisma Client Should Be a Singleton
+Prisma Client instantiates database connection pools internally. If you call `new PrismaClient()` across multiple files or routes, you create separate pools. Under load, these redundant pools quickly exceed PostgreSQL's `max_connections` limit, causing connections to drop. Utilizing a singleton exports a single connection instance reused globally.
+
+### 7.3. How Migrations Work
+* **migrate dev:** Compares the structural state of `schema.prisma` against your local PostgreSQL instance, generates a timestamped `.sql` migration file tracking DDL modifications, updates the local tables, and logs execution in `_prisma_migrations`.
+* **migrate deploy:** Used in production pipelines. It skips comparison checks and runs pending, pre-generated SQL migration scripts sequentially to prevent production state drifts.
+
+### 7.4. When to Use Transactions
+Transactions are required to enforce database **atomicity (ACID)**—guaranteeing that either *all* SQL writes in a sequence execute successfully, or *none* of them do:
+* **Race Conditions:** When checking out files, we execute a read check (`isLocked === false`) followed by a write update (`isLocked = true`). This must run in a database transaction block to prevent concurrent clients from claiming the same lock.
+* **Atomic Writes:** Modifying metadata alongside tracking audit history logs. If database connections drop midway, the transaction rolls back changes to prevent incomplete telemetry logs.
+
+### 7.5. Metadata vs Blob Binaries Allocation
+Relational databases are optimized for low-latency queries, indexing, and joining structured tables. Storing large binary payloads (blobs, PDFs, images) inside SQL tables creates massive storage sizes, degrades buffer pool cache performance, and slows down database backups. Storing raw metadata logs (file sizes, keys, locking parameters) in PostgreSQL keeps database lookups fast, while Supabase Storage handles low-cost binary storage and CDN caching.
+
+---
+
+## 8. Supabase Infrastructure Layer Concepts
+
+### 8.1. Decoupling Supabase from Application Business Logic
+Supabase provides core cloud infrastructure services (authentication interfaces, raw S3 bucket API proxies). Our backend encapsulates these services within standard application wrapper layers (e.g., `StorageService`). This decouples Supabase's specific SDK formats from our business logic services. If we migrate to an alternative S3 provider (like AWS S3 or MinIO) in the future, we only swap the implementation inside `StorageService` without rewriting core business workflows.
+
+### 8.2. Service Role Key vs Anon Key
+* **Anon Key:** A public API key safe to distribute to client browsers. Requests made with this key are strictly checked against database **Row Level Security (RLS)** policies and storage bucket access rules.
+* **Service Role Key:** An administrative bypass key that overrides all security checks and RLS parameters. It grants complete read/write/delete permissions across all databases and buckets.
+
+### 8.3. Why the Backend Owns the Service Role Key
+The `Service Role Key` possesses absolute privileges. If exposed to client applications, attackers could read, modify, or delete any record or file. The backend serves as the secure vault that stores this key, wrapping operations (such as validating file checks and deleting database assets) behind restricted API routes.
+
+### 8.4. Direct-to-Storage Uploads via Signed URLs
+Routing large binary uploads (e.g., 50MB PDF document packets) through the Express application has significant performance costs:
+* **Memory and CPU Overhead:** Node.js must buffer or stream chunk buffers, causing high memory spikes and event loop blocking on the main thread.
+* **Bandwidth Bottlenecks:** The server pays double the bandwidth costs (receiving the file from the client, then uploading it to S3).
+
+Instead, the client calls the backend to request a `signed upload URL`. This URL contains a short-lived cryptographic signature allowing the browser to PUT the binary file directly to Supabase S3 storage. Once finished, the browser registers the file path with the backend. This keeps the backend fast and responsive.
+
+### 8.5. Enterprise Document Bucket Organization
+For enterprise scalability, files are segregated into distinct buckets based on their access permissions, lifecycle logs, and performance needs:
+1. **`mc-documents` (Private, Strict Access):** Houses master document PDFs and original credentials. Runs under strict RLS rules, requiring backend signed URLs to download.
+2. **`mc-previews` (Optimized, Public Cache):** Contains low-resolution image thumbnails and previews generated by background workers. Configured with public read access and long CDN caching rules to speed up dashboard loads.
+3. **`mc-audits-archive` (Worm/Cold Storage):** Retains zipped annual audit trails and access sheets. Configured with cold-storage pricing tiers and strict retention rules to prevent deletion.

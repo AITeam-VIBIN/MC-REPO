@@ -1,6 +1,6 @@
 import env from './env.js';
 import prisma from './database.js';
-import supabase from './supabase.js';
+import { supabaseAnon, supabaseAdmin, STORAGE_BUCKETS } from './supabase.js';
 import redis from './redis.js';
 import { queueConnectionOptions, defaultJobOptions, queueConfigs } from './bullmq.js';
 import { logger } from './logger.js';
@@ -15,7 +15,9 @@ export const config = env;
 
 export {
   prisma,
-  supabase,
+  supabaseAnon,
+  supabaseAdmin,
+  STORAGE_BUCKETS,
   redis,
   queueConnectionOptions,
   defaultJobOptions,
@@ -27,7 +29,9 @@ export {
 export default {
   config,
   prisma,
-  supabase,
+  supabaseAnon,
+  supabaseAdmin,
+  STORAGE_BUCKETS,
   redis,
   queueConnectionOptions,
   defaultJobOptions,

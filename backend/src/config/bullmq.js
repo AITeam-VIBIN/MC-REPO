@@ -1,58 +1,75 @@
 import env from './env.js';
 
 /**
- * BullMQ Connection Options derived from Redis Configuration.
- * Used by Queue publishers and Worker consumers.
+ * BullMQ Shared Connection settings.
+ * Points to the verified Redis cluster instance.
  * 
  * @type {Object}
  */
 export const queueConnectionOptions = {
   connection: {
-    // BullMQ expects a connection URL or parsed host/port parameters
     url: env.REDIS_URL,
   },
 };
 
 /**
  * Global default BullMQ job configuration parameters.
- * Sets standard retries, concurrency limits, and exponential backoff.
+ * Configures automatic retries with exponential backoffs,
+ * and handles completion cleanup to prevent Redis memory bloats.
  * 
  * @type {Object}
  */
 export const defaultJobOptions = {
-  removeOnComplete: {
-    age: 24 * 3600, // Keep completed logs for 24 hours
-    count: 1000,
-  },
-  removeOnFail: {
-    age: 7 * 24 * 3600, // Keep failed logs for 7 days
-  },
   attempts: 3,
   backoff: {
     type: 'exponential',
-    delay: 5000, // Start retrying after 5 seconds
+    delay: 5000, // Initial wait of 5 seconds before retry
+  },
+  // Automatically cleanup logs to restrict Redis memory consumption
+  removeOnComplete: {
+    age: 24 * 3600, // Keep completed job metadata for 24 hours
+    count: 1000,    // Limit completed logs to 1000 records max
+  },
+  removeOnFail: {
+    age: 7 * 24 * 3600, // Keep failed job records for 7 days
+    count: 5000,        // Limit failed logs to 5000 records max
   },
 };
 
 /**
- * Queue-specific configurations.
+ * Enterprise Queue Specific Configuration limits.
  * 
  * @type {Object}
  */
 export const queueConfigs = {
-  virusScan: {
+  audit: {
+    name: 'audit-queue',
+    concurrency: 10,
+  },
+  notification: {
+    name: 'notification-queue',
+    concurrency: 5,
+  },
+  preview: {
+    name: 'preview-queue',
+    concurrency: 2, // CPU intensive image tasks
+  },
+  report: {
+    name: 'report-queue',
+    concurrency: 1, // Restrict reports runs to avoid DB locking
+  },
+  scheduler: {
+    name: 'scheduler-queue',
+    concurrency: 3,
+  },
+  virus: {
     name: 'virus-scan-queue',
     concurrency: 5,
-    priority: 'HIGH',
   },
-  pdfConversion: {
-    name: 'pdf-conversion-queue',
-    concurrency: 2,
-    priority: 'MEDIUM',
-  },
-  auditArchival: {
-    name: 'audit-archival-queue',
-    concurrency: 10,
-    priority: 'LOW',
-  },
+};
+
+export default {
+  queueConnectionOptions,
+  defaultJobOptions,
+  queueConfigs,
 };

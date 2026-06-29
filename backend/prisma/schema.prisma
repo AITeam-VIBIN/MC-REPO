@@ -1,8 +1,84 @@
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum DocumentStatus {
+  PENDING_UPLOAD
+  DRAFT
+  ACTIVE
+  INFECTED
+  ARCHIVED
+}
+
+model User {
+  id        String     @id
+  email     String     @unique
+  role      String     @default("VIEWER")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  
+  ownedDocuments  Document[] @relation("DocumentOwner")
+  lockedDocuments Document[] @relation("DocumentLocker")
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+model Document {
+  id         String         @id @default(uuid())
+  name       String
+  filePath   String         @map("file_path")
+  fileSize   Int            @map("file_size")
+  mimeType   String         @map("mime_type")
+  status     DocumentStatus @default(PENDING_UPLOAD)
+  version    Int            @default(1)
+  ownerId    String         @map("owner_id")
+  isLocked   Boolean        @default(false) @map("is_locked")
+  lockedById String?        @map("locked_by_id")
+  lockedAt   DateTime?      @map("locked_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  owner      User           @relation("DocumentOwner", fields: [ownerId], references: [id])
+  lockedBy   User?          @relation("DocumentLocker", fields: [lockedById], references: [id])
+  versions   FileVersion[]
+  auditLogs  AuditLog[]
+
+  @@map("documents")
+}
+
+model FileVersion {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  version    Int
+  filePath   String   @map("file_path")
+  changeLog  String   @map("change_log")
+  createdBy  String   @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("file_versions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  userId     String?  @map("user_id")
+  documentId String?  @map("document_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  payload    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
 }
