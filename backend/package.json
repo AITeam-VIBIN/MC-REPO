@@ -1,0 +1,35 @@
+{
+  "name": "mitcon-credentia-ledger-backend",
+  "version": "1.0.0",
+  "description": "Backend engine for MITCON-CREDENTIA Ledger (MC-Ledger) - JavaScript ES2023 ESM",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node prisma/seed.js",
+    "db:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.12.1",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bcrypt": "^5.1.1",
+    "bullmq": "^5.7.8",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.0",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^9.0.0",
+    "pino-http": "^9.0.0",
+    "redis": "^4.6.13",
+    "socket.io": "^4.7.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "pino-pretty": "^11.0.0",
+    "prisma": "^5.12.1"
+  }
+}
