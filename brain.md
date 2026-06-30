@@ -1,6 +1,6 @@
 # Project Memory Bank: brain.md
 ## System Name: MITCON Credential Digital File Storage System (BCD-FSS)
-**Document Version:** 1.2.0  
+**Document Version:** 1.4.0  
 **Last Updated:** June 29, 2026  
 
 This document serves as the persistent memory, architectural blueprint, and technical documentation bank for all engineers working on the **MITCON Credential Digital File Storage System (BCD-FSS)**.
@@ -168,6 +168,16 @@ Every business feature (e.g. `src/modules/documents/`) must adhere to this folde
 * **Decision:** Write all files as standard `.js` ES Modules. Document arguments and return values using JSDoc.
 * **Consequences:** Eliminates compilation steps (`tsc`), enables native Node.js hot-reloads (`node --watch`), and maintains IDE autocomplete.
 
+### ADR-006: Local Redis Availability Tolerance during Development
+* **Context:** Local developers may work on system modules (e.g. user authentication, database models) without having a running local Redis instance, causing bootstrap connection verification crashes.
+* **Decision:** Wrap the Redis `.ping()` check in `server.js` bootstrap inside a try-catch construct, logging a warning rather than throwing a fatal crash.
+* **Consequences:** Server boots up successfully on localhost without requiring local Redis to be constantly online.
+
+### ADR-007: Development Environment Queue Mocking (REDIS_ENABLED toggle)
+* **Context:** While ADR-006 allowed the server to boot up, the active instantiation of BullMQ Queues and Workers inside module files triggered background reconnect loops within `ioredis` that flooded the terminal with connection spams (`ECONNREFUSED`).
+* **Decision:** Introduce a configuration toggle `REDIS_ENABLED` in environment schemas. When set to `false`, the backend instantiates lightweight mock classes (e.g., `MockQueue` and `MockWorker`) implementing standard Queue/Worker interfaces.
+* **Consequences:** Developers can run, test, and write CRUD/auth layers locally without running local Redis. Job enqueues log output metrics to stdout instead of throwing socket errors.
+
 ---
 
 ## 5. Architectural Workflows
@@ -204,11 +214,11 @@ Guarantees file locking and prevents edit conflicts:
 The following files have been created in the `backend/` project workspace:
 
 ### 6.1. Configuration Layer (`src/config/`)
-* **[env.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/env.js):** Environment variable verification and schema parsing.
+* **[env.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/env.js):** Environment variable verification and schema parsing. Stores the `REDIS_ENABLED` boolean toggle flag.
 * **[database.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/database.js):** Exports the Prisma database connection client singleton.
 * **[supabase.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/supabase.js):** Initializes and exports the Supabase client wrapper. Defines bucket storage identifiers.
-* **[redis.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/redis.js):** Sets up and exports the Redis Client singleton.
-* **[bullmq.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/bullmq.js):** Defines BullMQ queue names, default retries, and job backoff limits.
+* **[redis.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/redis.js):** Sets up and exports the **ioredis** Client connection singleton. Yields a lightweight mock client if `REDIS_ENABLED` is false.
+* **[bullmq.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/bullmq.js):** Defines BullMQ connection credentials, default retries, exponential backoffs, and queue limits.
 * **[logger.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/logger.js):** Centralized Pino client configurations.
 * **[security.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/security.js):** Stores CORS origins, Helmet CSP policies, and encryption parameters.
 * **[index.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/config/index.js):** Central portal re-exporting all configuration singletons.
@@ -220,7 +230,7 @@ The following files have been created in the `backend/` project workspace:
 
 ### 6.3. Application Bootstrap
 * **[app.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/app.js):** Express application configuration, payload limit parsers, route mounts, and global error formatters.
-* **[server.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/server.js):** The HTTP server network bootstrapper. Sets up process signal captures (`SIGINT`, `SIGTERM`) to trigger graceful shutdowns.
+* **[server.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/server.js):** The HTTP server network bootstrapper. Instantiates graceful shutdowns for BullMQ workers and Redis connections on process signals (`SIGINT`, `SIGTERM`).
 
 ### 6.4. Database ORM Foundation (`prisma/`)
 * **[schema.prisma](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/prisma/schema.prisma):** Foundational configuration defining standard PostgreSQL datasource and generator.
@@ -228,6 +238,21 @@ The following files have been created in the `backend/` project workspace:
 
 ### 6.5. Infrastructure Services (`src/services/`)
 * **[storage.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/services/storage/storage.service.js):** Wraps storage operations (signed URLs, moves, deletes) executing against Supabase buckets.
+
+### 6.6. Background Processing & Workers Layer (`src/jobs/`)
+* **[audit.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/audit.queue.js):** Asynchronous transaction logging publisher client. Runs on mock objects if `REDIS_ENABLED` is false.
+* **[notification.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/notification.queue.js):** Alert and mailer job publisher client.
+* **[preview.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/preview.queue.js):** Low-res preview generation job publisher client.
+* **[report.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/report.queue.js):** Large spreadsheet compilation job publisher client.
+* **[scheduler.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/scheduler.queue.js):** Sweeper and lock cleanup cron publisher client.
+* **[virus.queue.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/queues/virus.queue.js):** Upload drafting scan job publisher client.
+* **[audit.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/audit.worker.js):** Consumer thread executing audit logs database writes.
+* **[notification.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/notification.worker.js):** Consumer thread dispatching mailers and WebSockets alerts.
+* **[preview.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/preview.worker.js):** Consumer thread running rendering thumbnails.
+* **[report.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/report.worker.js):** Consumer thread rendering CSV metrics sheets.
+* **[scheduler.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/scheduler.worker.js):** Consumer thread sweeping expired database check-out locks.
+* **[virus.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/virus.worker.js):** Consumer thread executing upload file antivirus evaluations.
+* **[index.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/index.js):** Consolidated queues and workers registry, managing unified cluster shutdowns.
 
 ---
 
@@ -277,3 +302,17 @@ For enterprise scalability, files are segregated into distinct buckets based on 
 1. **`mc-documents` (Private, Strict Access):** Houses master document PDFs and original credentials. Runs under strict RLS rules, requiring backend signed URLs to download.
 2. **`mc-previews` (Optimized, Public Cache):** Contains low-resolution image thumbnails and previews generated by background workers. Configured with public read access and long CDN caching rules to speed up dashboard loads.
 3. **`mc-audits-archive` (Worm/Cold Storage):** Retains zipped annual audit trails and access sheets. Configured with cold-storage pricing tiers and strict retention rules to prevent deletion.
+
+---
+
+## 9. Background Job Broker Layer (Redis & BullMQ)
+
+### 9.1. Decoupled Processing Architecture
+Time-consuming operations (calculating antivirus hashes, rendering thumb slides, archiving tables) must never run on the Node.js primary thread. Doing so blocks the single event loop, causing requests to time out. Utilizing BullMQ backed by Redis creates an asynchronous broker where background jobs are enqueued as metadata payloads. Decoupled worker containers poll these queues and process jobs independently, maintaining HTTP server availability.
+
+### 9.2. Connection Lifecycle & Graceful Shutdown Strategy
+Workers maintain continuous Socket connections to Redis using `BRPOPLPUSH` blockers. If the application server restarts or scales down without terminating these connections:
+* Active executing jobs are cut off mid-run, resulting in corrupted files or missing database indexes.
+* Redis sockets remain registered, exhausting file descriptor limits.
+
+To mitigate this, `handleGracefulShutdown` intercepts OS signals (`SIGTERM`, `SIGINT`), closes the HTTP server, and invokes `shutdownQueuesAndWorkers()`. This stops workers from pulling new jobs while allowing active jobs to finish within a 10-second safety window, ensuring no jobs are lost or corrupted.

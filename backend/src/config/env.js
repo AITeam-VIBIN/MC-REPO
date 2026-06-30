@@ -11,6 +11,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  REDIS_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default('true'),
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),

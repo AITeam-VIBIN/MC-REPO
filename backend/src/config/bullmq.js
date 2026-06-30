@@ -1,16 +1,18 @@
 import env from './env.js';
+import { createRedisClient } from './redis.js';
 
 /**
- * BullMQ Shared Connection settings.
- * Points to the verified Redis cluster instance.
+ * Generates custom BullMQ connection options utilizing our client builder.
+ * This registers error handlers on every queue/worker connection, preventing console spams when Redis is offline.
  * 
- * @type {Object}
+ * @function getQueueConnectionOptions
+ * @returns {Object} Connection options containing a pre-configured ioredis client
  */
-export const queueConnectionOptions = {
-  connection: {
-    url: env.REDIS_URL,
-  },
-};
+export function getQueueConnectionOptions() {
+  return {
+    connection: createRedisClient(),
+  };
+}
 
 /**
  * Global default BullMQ job configuration parameters.
@@ -69,7 +71,7 @@ export const queueConfigs = {
 };
 
 export default {
-  queueConnectionOptions,
+  getQueueConnectionOptions,
   defaultJobOptions,
   queueConfigs,
 };

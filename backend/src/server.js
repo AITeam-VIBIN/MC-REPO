@@ -1,6 +1,8 @@
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import app from './app.js';
+import { shutdownQueuesAndWorkers } from './jobs/index.js';
+import redis from './config/redis.js';
 
 // Load environmental parameters
 dotenv.config();
@@ -31,13 +33,16 @@ async function handleGracefulShutdown(signal) {
     console.log('HTTP connection ports successfully closed.');
 
     try {
+      // 1. Gracefully stop BullMQ queue connections and worker processes
+      await shutdownQueuesAndWorkers();
+
+      // 2. Disconnect the main Redis ioredis client
+      await redis.quit();
+      console.log('Redis cache client connection closed.');
+
       // PLACEHOLDER: Disconnect Prisma database client
       // await prisma.$disconnect();
       // console.log('Database client disconnected.');
-
-      // PLACEHOLDER: Disconnect Redis and stop BullMQ background workers
-      // await redisClient.quit();
-      // console.log('Redis cache and queue clients disconnected.');
 
       console.log('Graceful cleanup completed. Exiting process.');
       process.exit(0);
@@ -88,8 +93,13 @@ async function startBootstrap() {
     // await prisma.$connect();
     // console.log('Database connection tested successfully.');
 
-    // PLACEHOLDER: Verify Redis / Queue brokers
-    // await connectRedis();
+    // Verify Redis connection client gracefully for local development runs
+    try {
+      await redis.ping();
+      console.log('Redis Cache connection verified.');
+    } catch (redisErr) {
+      console.warn('⚠️ Redis Cache connection failed. Background job workers may be offline.');
+    }
 
     // PLACEHOLDER: Initialize Socket.IO server
     // await initSocketServer(server);
