@@ -1,13 +1,16 @@
 import express from 'express';
 import { requestIdMiddleware } from './shared/request-id.js';
-import { requestLogger } from './middleware/requestLogger.js';
-import { errorLogger } from './middleware/errorLogger.js';
-
-// Placeholders for security and routing modules to be imported in future phases
-// import helmet from 'helmet';
-// import cors from 'cors';
-// import { apiLimiter } from './middleware/rateLimit.mw.js';
-// import rootRouter from './routes/index.js';
+import {
+  corsMiddleware,
+  helmetMiddleware,
+  requestLogger,
+  cookieParserMiddleware,
+  jsonParser,
+  urlEncodedParser,
+  compressionMiddleware,
+  apiLimiter,
+  errorLogger
+} from './middleware/index.js';
 
 const app = express();
 
@@ -15,31 +18,34 @@ const app = express();
 // 1. Global Pre-Routing Middleware Chain
 // ==========================================
 
-// PLACEHOLDER: Security Headers (Helmet)
-// app.use(helmet());
+// CORS must be evaluated first to properly handle cross-origin preflight requests
+app.use(corsMiddleware);
 
-// PLACEHOLDER: Cross-Origin Resource Sharing (CORS)
-// app.use(cors());
+// Register Helmet early to secure headers on all downstream responses
+app.use(helmetMiddleware);
 
-// Inject correlation identifier
+// Inject correlation identifier for tracing
 app.use(requestIdMiddleware);
 
-// Structured API request logging
+// Structured HTTP request logging
 app.use(requestLogger);
 
-// PLACEHOLDER: Global API Rate Limiter
-// app.use('/api', apiLimiter);
+// Cookie parsing
+app.use(cookieParserMiddleware);
 
-// Payload parsing middlewares
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// JSON and URL-encoded request body parsing with size limits
+app.use(jsonParser);
+app.use(urlEncodedParser);
+
+// Gzip response compression
+app.use(compressionMiddleware);
+
+// Global API rate limiting
+app.use(apiLimiter);
 
 // ==========================================
 // 2. Routes Routing Mounts
 // ==========================================
-
-// PLACEHOLDER: Mount main modular application router
-// app.use('/api/v1', rootRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {

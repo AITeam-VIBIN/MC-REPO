@@ -22,6 +22,11 @@ export const securityConfig = {
     expiresIn: env.JWT_EXPIRE_IN,
     algorithms: ['HS256'], // Supabase tokens sign standard HS256 HMAC JWTs
   },
+  cookieSecret: env.SUPABASE_JWT_SECRET, // Unified cookie signature secret
+  bodyLimits: {
+    json: '10mb',
+    urlEncoded: '10mb',
+  },
   cors: {
     origin: corsWhitelist,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -42,6 +47,23 @@ export const securityConfig = {
     },
     crossOriginEmbedderPolicy: true,
     referrerPolicy: { policy: 'same-origin' },
+  },
+  rateLimit: {
+    general: {
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100, // Limit each IP to 100 requests per windowMs
+      message: 'Too many requests from this IP, please try again after 15 minutes',
+    },
+    auth: {
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 20, // Limit each IP to 20 auth attempts per windowMs
+      message: 'Too many login attempts from this IP, please try again after 15 minutes',
+    },
+    upload: {
+      windowMs: 60 * 60 * 1000, // 1 hour
+      max: 50, // Limit each IP to 50 uploads per windowMs
+      message: 'Upload limit exceeded from this IP, please try again after an hour',
+    },
   },
 };
 
