@@ -104,16 +104,18 @@ erDiagram
 
 ## 3. Low-Level Design (LLD) & Modular Boundaries
 
-The backend implements a **Feature-Based Modular Architecture** to keep boundary scopes strict and testable as the codebase scales.
+The backend implements a **Consolidated Directory Architecture** to keep boundary scopes strict and prevent file sprawl while maintaining high codebase hygiene.
 
 ### 3.1. Standard Module Structure
-Every business feature (e.g. `src/modules/documents/`) must adhere to this folder structure:
-* **`*.routes.js`:** Declares endpoints and wires middlewares (auth, validators) to controllers.
-* **`*.controller.js`:** Transport boundary (HTTP req/res). Extracts variables, invokes DTOs, and calls Services.
-* **`*.dto.js`:** Serializes incoming request parameters (Input DTO) and formats outgoing records (Output DTO).
-* **`*.service.js`:** Agnostic business algorithm orchestrations. No Express variables.
-* **`*.repository.js`:** Pure database query handlers using the Prisma Client singleton.
-* **`*.validation.js`:** Zod verification schemas checking request shapes.
+For any business feature (e.g., `auth`):
+1. **Core Directory (`src/auth/`)**:
+   * **`auth.service.js`**: Consolidates business logic, constants (`AUTH_CONFIG`, `AUTH_MESSAGES`, `AUTH_ERRORS`), and data transfer serialization mappings (DTOs).
+   * **`auth.routes.js`**: Consolidates routing endpoints and Zod validation schemas.
+2. **Respective Architectural Folders**:
+   * **`src/controllers/auth.controller.js`**: Handles Express Request/Response boundaries and invokes services/DTOs.
+   * **`src/middleware/auth.middleware.js`**: Wires specific authentication/authorization guards.
+   * **`src/repositories/auth.repository.js`**: Abstracts database logic using Prisma Client.
+   * **`src/utils/auth.util.js`**: Exposes helper functions for headers/cookies.
 
 ### 3.2. Middleware Execution Chain
 ```
@@ -253,6 +255,21 @@ The following files have been created in the `backend/` project workspace:
 * **[scheduler.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/scheduler.worker.js):** Consumer thread sweeping expired database check-out locks.
 * **[virus.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/virus.worker.js):** Consumer thread executing upload file antivirus evaluations.
 * **[index.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/index.js):** Consolidated queues and workers registry, managing unified cluster shutdowns.
+
+### 6.7. Authentication Layer (`src/auth/`, `src/controllers/`, `src/middleware/`, `src/repositories/`, `src/utils/`)
+* **[auth.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.service.js):** Core service handling business workflows, DTOs, and constants.
+* **[auth.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[auth.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/auth.controller.js):** Interface controller routing requests to service functions.
+* **[auth.middleware.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/middleware/auth.middleware.js):** Custom authentication and role access validation filters.
+* **[auth.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/auth.repository.js):** User profile database querying and session state operations.
+* **[auth.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/auth.util.js):** Cookie setters and token token parsers.
+
+### 6.8. Users Layer (`src/users/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[users.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/users/users.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[users.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/users/users.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[users.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/users.controller.js):** Interface controller routing requests to service functions.
+* **[users.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/users.repository.js):** User account querying and database updates logic.
+* **[users.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/users.util.js):** User mapper transformations converting db profiles to Response DTOs.
 
 ---
 
