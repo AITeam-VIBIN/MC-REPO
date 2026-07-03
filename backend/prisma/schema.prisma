@@ -8,6 +8,10 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// =========================================================================
+// Enums
+// =========================================================================
+
 enum DocumentStatus {
   PENDING_UPLOAD
   DRAFT
@@ -16,17 +20,46 @@ enum DocumentStatus {
   ARCHIVED
 }
 
+enum DocumentClassification {
+  PUBLIC
+  INTERNAL
+  CONFIDENTIAL
+  RESTRICTED
+}
+
+enum StorageProvider {
+  SUPABASE
+  LOCAL
+  AWS_S3
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// =========================================================================
+// Models
+// =========================================================================
+
 model User {
-  id        String     @id
-  email     String     @unique
-  role      String     @default("VIEWER")
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
-  
-  ownedDocuments  Document[] @relation("DocumentOwner")
-  lockedDocuments Document[] @relation("DocumentLocker")
-  auditLogs       AuditLog[]
-  sessions        Session[]
+  id           String      @id
+  email        String      @unique
+  role         String      @default("VIEWER")
+  departmentId String?     @map("department_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  // Relationships
+  department        Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  ownedDocuments    Document[]        @relation("DocumentOwner")
+  lockedDocuments   Document[]        @relation("DocumentLocker")
+  folders           Folder[]
+  requestedApprovals ApprovalRequest[] @relation("RequestedApprovals")
+  approvedApprovals  ApprovalRequest[] @relation("ApprovedApprovals")
+  auditLogs         AuditLog[]
+  sessions          Session[]
 
   @@map("users")
 }
@@ -50,25 +83,80 @@ model Session {
   @@map("sessions")
 }
 
-model Document {
-  id         String         @id @default(uuid())
-  name       String
-  filePath   String         @map("file_path")
-  fileSize   Int            @map("file_size")
-  mimeType   String         @map("mime_type")
-  status     DocumentStatus @default(PENDING_UPLOAD)
-  version    Int            @default(1)
-  ownerId    String         @map("owner_id")
-  isLocked   Boolean        @default(false) @map("is_locked")
-  lockedById String?        @map("locked_by_id")
-  lockedAt   DateTime?      @map("locked_at")
-  createdAt  DateTime       @default(now()) @map("created_at")
-  updatedAt  DateTime       @updatedAt @map("updated_at")
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  owner      User           @relation("DocumentOwner", fields: [ownerId], references: [id])
-  lockedBy   User?          @relation("DocumentLocker", fields: [lockedById], references: [id])
-  versions   FileVersion[]
-  auditLogs  AuditLog[]
+  // Relationships
+  users     User[]
+  folders   Folder[]
+  documents Document[]
+
+  @@map("departments")
+}
+
+model Folder {
+  id           String      @id @default(uuid())
+  name         String
+  parentId     String?     @map("parent_id")
+  departmentId String?     @map("department_id")
+  ownerId      String      @map("owner_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  // Relationships
+  parent       Folder?     @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  subFolders   Folder[]    @relation("SubFolders")
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  owner        User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  documents    Document[]
+
+  @@map("folders")
+}
+
+model Document {
+  id              String                 @id @default(uuid())
+  name            String
+  description     String?
+  folderId        String?                @map("folder_id")
+  departmentId    String?                @map("department_id")
+  ownerId         String                 @map("owner_id")
+  
+  // Storage information
+  storageProvider StorageProvider        @default(SUPABASE) @map("storage_provider")
+  storageBucket   String                 @map("storage_bucket")
+  storagePath     String                 @map("storage_path")
+  
+  // File metadata
+  mimeType        String                 @map("mime_type")
+  fileSize        BigInt                 @map("file_size")
+  checksum        String?                @map("checksum")
+  
+  // Lifecycle & security
+  classification  DocumentClassification @default(INTERNAL)
+  status          DocumentStatus         @default(PENDING_UPLOAD)
+  version         Int                    @default(1)
+  isLocked        Boolean                @default(false) @map("is_locked")
+  lockedById      String?                @map("locked_by_id")
+  lockedAt        DateTime?              @map("locked_at")
+  
+  // Soft delete & Archiving
+  isDeleted       Boolean                @default(false) @map("is_deleted")
+  deletedAt       DateTime?              @map("deleted_at")
+  
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  // Relationships
+  owner            User                   @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  lockedBy         User?                  @relation("DocumentLocker", fields: [lockedById], references: [id], onDelete: SetNull)
+  folder           Folder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  department       Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  versions         FileVersion[]
+  auditLogs        AuditLog[]
+  approvalRequests ApprovalRequest[]
 
   @@map("documents")
 }
@@ -82,9 +170,28 @@ model FileVersion {
   createdBy  String   @map("created_by")
   createdAt  DateTime @default(now()) @map("created_at")
 
+  // Relationships
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("file_versions")
+}
+
+model ApprovalRequest {
+  id          String         @id @default(uuid())
+  documentId  String         @map("document_id")
+  requesterId String         @map("requester_id")
+  approverId  String?        @map("approver_id")
+  status      ApprovalStatus @default(PENDING)
+  comments    String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  // Relationships
+  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requester   User           @relation("RequestedApprovals", fields: [requesterId], references: [id], onDelete: Cascade)
+  approver    User?          @relation("ApprovedApprovals", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@map("approval_requests")
 }
 
 model AuditLog {
@@ -97,6 +204,7 @@ model AuditLog {
   payload    Json?
   createdAt  DateTime @default(now()) @map("created_at")
 
+  // Relationships
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
