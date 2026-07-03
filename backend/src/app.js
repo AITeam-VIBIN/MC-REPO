@@ -11,6 +11,8 @@ import {
   apiLimiter,
   errorLogger
 } from './middleware/index.js';
+import authRouter from './auth/auth.routes.js';
+import securityRouter from './routes/security.routes.js';
 
 const app = express();
 
@@ -46,6 +48,12 @@ app.use(apiLimiter);
 // ==========================================
 // 2. Routes Routing Mounts
 // ==========================================
+
+// Mount Authentication router
+app.use('/api/v1/auth', authRouter);
+
+// Mount Consolidated Security router (Sessions, Devices, Roles, Permissions, Identity Activity)
+app.use('/api/v1', securityRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {

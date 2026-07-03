@@ -12,4 +12,4 @@ export {
   cookieParserMiddleware,
   registerSecurityMiddleware,
 } from './security.middleware.js';
-export { requireAuth, requireRole } from './auth.middleware.js';
+export { requireAuth, requireRole, requireSession, requirePermission } from './auth.middleware.js';

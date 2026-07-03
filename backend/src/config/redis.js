@@ -14,7 +14,7 @@ let hasWarnedOfConnectionFailure = false;
 function configureClientListeners(client) {
   client.on('error', (err) => {
     if (!hasWarnedOfConnectionFailure) {
-      console.warn(`\n⚠️  [Redis] Connection failed: ${err.message || 'ECONNREFUSED'}.`);
+      console.warn(`\nRedis] Connection failed: ${err.message || 'ECONNREFUSED'}.`);
       console.warn('   The server will run, but background jobs/real-time state locks will be offline.\n');
       hasWarnedOfConnectionFailure = true;
     }

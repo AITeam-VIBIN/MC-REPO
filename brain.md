@@ -256,13 +256,10 @@ The following files have been created in the `backend/` project workspace:
 * **[virus.worker.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/workers/virus.worker.js):** Consumer thread executing upload file antivirus evaluations.
 * **[index.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/jobs/index.js):** Consolidated queues and workers registry, managing unified cluster shutdowns.
 
-### 6.7. Authentication Layer (`src/auth/`, `src/controllers/`, `src/middleware/`, `src/repositories/`, `src/utils/`)
-* **[auth.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.service.js):** Core service handling business workflows, DTOs, and constants.
-* **[auth.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.routes.js):** Express routing boundaries with Zod validator schemas.
-* **[auth.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/auth.controller.js):** Interface controller routing requests to service functions.
+### 6.7. Authentication Layer (`src/auth/`, `src/middleware/`)
+* **[auth.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.service.js):** Core service handling business workflows, DTOs, constants, and direct Prisma DB queries.
+* **[auth.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/auth/auth.routes.js):** Express routing boundaries, Zod validator schemas, cookie setters, token parsers, and HTTP controller request handlers.
 * **[auth.middleware.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/middleware/auth.middleware.js):** Custom authentication and role access validation filters.
-* **[auth.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/auth.repository.js):** User profile database querying and session state operations.
-* **[auth.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/auth.util.js):** Cookie setters and token token parsers.
 
 ### 6.8. Users Layer (`src/users/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
 * **[users.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/users/users.service.js):** Core service handling business capabilities, DTOs, and constants.
@@ -270,6 +267,46 @@ The following files have been created in the `backend/` project workspace:
 * **[users.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/users.controller.js):** Interface controller routing requests to service functions.
 * **[users.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/users.repository.js):** User account querying and database updates logic.
 * **[users.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/users.util.js):** User mapper transformations converting db profiles to Response DTOs.
+
+### 6.9. Roles Layer (`src/roles/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[roles.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/roles/roles.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[roles.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/roles/roles.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[roles.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/roles.controller.js):** Interface controller routing requests to service functions.
+* **[roles.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/roles.repository.js):** Role settings querying and database updates logic.
+* **[roles.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/roles.util.js):** Role mapper transformations converting db configurations to Response DTOs.
+
+### 6.10. Permissions Layer (`src/permissions/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[permissions.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/permissions/permissions.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[permissions.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/permissions/permissions.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[permissions.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/permissions.controller.js):** Interface controller routing requests to service functions.
+* **[permissions.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/permissions.repository.js):** Permission actions querying and database updates logic.
+* **[permissions.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/permissions.util.js):** Permission mapper transformations converting db configurations to Response DTOs.
+
+### 6.11. Sessions Layer (`src/sessions/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[sessions.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/sessions/sessions.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[sessions.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/sessions/sessions.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[sessions.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/sessions.controller.js):** Interface controller routing requests to service functions.
+* **[sessions.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/sessions.repository.js):** Session settings querying and database updates logic.
+* **[sessions.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/sessions.util.js):** Session mapper transformations and user-agent parsing logic.
+
+### 6.12. RBAC Layer (`src/rbac/`, `src/middleware/`)
+* **[rbac.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/rbac/rbac.service.js):** Core role/permission resolution services, permission caching, and constant mappings.
+* **[auth.middleware.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/middleware/auth.middleware.js):** Consolidated Express guards (`requireAuth`, `requireSession`, `requireRole`, `requirePermission`).
+* **[README.md](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/rbac/README.md):** Module architecture LLD documentation.
+
+### 6.13. Devices Layer (`src/devices/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[devices.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/devices/devices.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[devices.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/devices/devices.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[devices.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/devices.controller.js):** Interface controller routing requests to service functions.
+* **[devices.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/devices.repository.js):** Session mapping queries to represent Devices.
+* **[devices.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/devices.util.js):** Device mapper transformations converting db profiles to Response DTOs.
+
+### 6.14. Identity Activity Layer (`src/identity-activity/`, `src/controllers/`, `src/repositories/`, `src/utils/`)
+* **[identity-activity.service.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/identity-activity/identity-activity.service.js):** Core service handling business capabilities, DTOs, and constants.
+* **[identity-activity.routes.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/identity-activity/identity-activity.routes.js):** Express routing boundaries with Zod validator schemas.
+* **[identity-activity.controller.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/controllers/identity-activity.controller.js):** Interface controller routing requests to service functions.
+* **[identity-activity.repository.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/repositories/identity-activity.repository.js):** AuditLog querying for authentication activities.
+* **[identity-activity.util.js](file:///c:/Users/Vibin.Cariappa/Desktop/Credentia/backend/src/utils/identity-activity.util.js):** Activity mapper transformations converting db logs to DTOs.
 
 ---
 
@@ -328,8 +365,198 @@ For enterprise scalability, files are segregated into distinct buckets based on 
 Time-consuming operations (calculating antivirus hashes, rendering thumb slides, archiving tables) must never run on the Node.js primary thread. Doing so blocks the single event loop, causing requests to time out. Utilizing BullMQ backed by Redis creates an asynchronous broker where background jobs are enqueued as metadata payloads. Decoupled worker containers poll these queues and process jobs independently, maintaining HTTP server availability.
 
 ### 9.2. Connection Lifecycle & Graceful Shutdown Strategy
-Workers maintain continuous Socket connections to Redis using `BRPOPLPUSH` blockers. If the application server restarts or scales down without terminating these connections:
-* Active executing jobs are cut off mid-run, resulting in corrupted files or missing database indexes.
-* Redis sockets remain registered, exhausting file descriptor limits.
-
 To mitigate this, `handleGracefulShutdown` intercepts OS signals (`SIGTERM`, `SIGINT`), closes the HTTP server, and invokes `shutdownQueuesAndWorkers()`. This stops workers from pulling new jobs while allowing active jobs to finish within a 10-second safety window, ensuring no jobs are lost or corrupted.
+
+---
+
+## 10. Module-Specific Low-Level Design (LLD)
+
+### 10.1. Device Management Module
+This module maps active device profiles directly onto user active database `sessions` persistence records, adhering strictly to the **Consolidated Directory Architecture** guidelines.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── devices/
+│   └── (README.md consolidated here)
+├── controllers/
+│   └── security.controller.js   # Controller handling HTTP request/responses
+├── routes/
+│   └── security.routes.js       # Express route bindings and Zod validation schemas
+├── services/
+│   └── security.service.js      # Core business logic, DTOs, and constants
+└── utils/
+    └── security.util.js         # Device entity mapper utility (deviceMapper)
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Authenticated users submit requests to endpoints mapped in `routes/security.routes.js`.
+2. Inline validation schemas verify payload parameters.
+3. If payload validation fails, a standardized `VALIDATION_ERROR` response is returned immediately.
+4. If successful, control moves to the corresponding method in `controllers/security.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller method calls matching actions in `services/security.service.js`.
+2. The service acts as the business orchestrator, querying database rows on the `Session` model via `repositories/security.repository.js`.
+3. The database outputs are sanitized via `security.util.js` (`deviceMapper`) to output clean response payloads via `DeviceResponseDto`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/devices/` | `GET` | `requireAuth`, `requireSession` | None | Lists active user device profiles |
+| `/api/v1/devices/:id/trust` | `PATCH` | `requireAuth`, `requireSession` | `trustDeviceSchema` | Sets the trust status flag on a device |
+| `/api/v1/devices/:id` | `DELETE` | `requireAuth`, `requireSession` | `revokeDeviceSchema` | Revokes the device and logs out the session |
+
+---
+
+### 10.2. Identity Activity Module
+This module maps authentication activities directly onto user active database `audit_logs` records, adhering strictly to the **Consolidated Directory Architecture** guidelines.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── identity-activity/
+│   └── (README.md consolidated here)
+├── controllers/
+│   └── security.controller.js         # Controller handling HTTP request/responses
+├── routes/
+│   └── security.routes.js             # Express route bindings and Zod validation schemas
+├── services/
+│   └── security.service.js            # Core business logic, DTOs, and constants
+└── utils/
+    └── security.util.js               # Identity activity mapper (activityMapper)
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Authenticated users submit requests to endpoints mapped in `routes/security.routes.js`.
+2. Inline validation schemas verify query pagination params.
+3. If validation fails, a standardized `VALIDATION_ERROR` response is returned.
+4. If successful, control moves to the corresponding method in `controllers/security.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller method calls matching actions in `services/security.service.js`.
+2. The service queries database rows on the `AuditLog` model via `repositories/security.repository.js`.
+3. The database outputs are sanitized via `security.util.js` (`activityMapper`) to output clean response payloads via `ActivityResponseDto`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/identity-activity/` | `GET` | `requireAuth`, `requireSession` | `listActivitiesSchema` | Lists paginated auth activities for the user |
+
+---
+
+### 10.3. Permissions Management Module
+This module manages custom system security permission definitions, adhering strictly to the **Consolidated Directory Architecture** guidelines.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── permissions/
+│   └── (README.md consolidated here)
+├── controllers/
+│   └── security.controller.js   # Controller handling HTTP request/responses
+├── routes/
+│   └── security.routes.js       # Express route bindings and Zod validation schemas
+├── services/
+│   └── security.service.js      # Core business logic, DTOs, and constants
+├── repositories/
+│   └── security.repository.js   # Prisma data persistence layer for Permission tables
+└── utils/
+    └── security.util.js         # Permission entity mapper utilities (permissionMapper)
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Administrators submit requests to endpoints mapped in `routes/security.routes.js`.
+2. Inline validation schemas verify payload parameters.
+3. If payload validation fails, a standardized `VALIDATION_ERROR` response is returned immediately.
+4. If successful, control moves to the corresponding method in `controllers/security.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller method calls matching actions in `services/security.service.js`.
+2. The service acts as the business orchestrator, querying `repositories/security.repository.js`.
+3. The database outputs are sanitized via `security.util.js` (`permissionMapper`) to output clean response payloads via `PermissionResponseDto`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/permissions/` | `POST` | `requireAuth`, `requireRole` | `createPermissionSchema` | Registers a custom permission |
+| `/api/v1/permissions/` | `GET` | `requireAuth`, `requireRole` | `listPermissionsSchema` | Lists registered permissions |
+| `/api/v1/permissions/assign` | `POST` | `requireAuth`, `requireRole` | `assignPermissionSchema` | Binds a permission to a role |
+| `/api/v1/permissions/:id` | `GET` | `requireAuth`, `requireRole` | `permissionIdParamSchema` | Retrieves details for a specific permission |
+| `/api/v1/permissions/:id` | `PUT` | `requireAuth`, `requireRole` | `updatePermissionSchema` | Modifies configuration details of a permission |
+| `/api/v1/permissions/:id` | `DELETE` | `requireAuth`, `requireRole` | `permissionIdParamSchema` | Purges a custom permission definition |
+
+---
+
+### 10.4. Role-Based Access Control (RBAC) Module
+This module handles core role/permission resolution, constants, and cached access checks, pushing reusable middleware guards to standard top-level layers.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── rbac/
+│   └── (README.md consolidated here)
+├── middleware/
+│   └── auth.middleware.js       # Reusable middleware filters (requireAuth, requireSession, requireRole, requirePermission)
+├── services/
+│   └── security.service.js      # Core role/permission resolution, constants, and caching
+```
+
+#### Architectural Flows
+##### 1. Request Authentication (`requireAuth`)
+1. Users provide JWT access tokens in the `Authorization` header.
+2. The middleware authenticates the token context via Supabase `auth.getUser()`, binding the verified user payload context.
+
+##### 2. Session Integrity (`requireSession`)
+1. Resolves the database sessions mapping list for the user.
+2. Confirms the user has at least one active, non-revoked session record in the local database.
+
+##### 3. Access Controls (`requireRole` & `requirePermission`)
+1. Evaluates user roles or compiles effective permissions via `PermissionResolutionService`.
+2. Employs a TTL-based memory caching utility to avoid redundant database reads.
+3. Automatically maps Super Admin wildcard flags (`*`) to bypass security check hooks.
+
+---
+
+### 10.5. Roles Management Module
+This module manages security roles and bindings, adhering strictly to the **Consolidated Directory Architecture** guidelines.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── roles/
+│   ├── roles.service.js         # Core business logic, DTOs, and constants
+├── controllers/
+│   └── security.controller.js   # Controller handling HTTP request/responses
+├── routes/
+│   └── security.routes.js       # Express route bindings and Zod validation schemas
+├── repositories/
+│   └── security.repository.js   # Prisma data persistence layer for Role tables
+└── utils/
+    └── security.util.js         # Role entity mapper utilities (roleMapper)
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Administrators submit requests to endpoints mapped in `routes/security.routes.js`.
+2. Inline validation schemas verify payload parameters.
+3. If payload validation fails, a standardized `VALIDATION_ERROR` response is returned immediately.
+4. If successful, control moves to the corresponding method in `controllers/security.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller method calls matching actions in `services/roles.service.js`.
+2. The service acts as the business orchestrator, querying `repositories/security.repository.js`.
+3. The database outputs are sanitized via `security.util.js` (`roleMapper`) to output clean response payloads via `RoleResponseDto`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/roles/` | `POST` | `requireAuth`, `requireRole` | `createRoleSchema` | Registers a custom role profile |
+| `/api/v1/roles/` | `GET` | `requireAuth`, `requireRole` | `listRolesSchema` | Lists registered role configs |
+| `/api/v1/roles/assign` | `POST` | `requireAuth`, `requireRole` | `assignRoleSchema` | Binds a role to a user profile |
+| `/api/v1/roles/:id` | `GET` | `requireAuth`, `requireRole` | `roleIdParamSchema` | Retrieves details for a specific role |
+| `/api/v1/roles/:id` | `PUT` | `requireAuth`, `requireRole` | `updateRoleSchema` | Modifies configuration details of a role |
+| `/api/v1/roles/:id` | `DELETE` | `requireAuth`, `requireRole` | `roleIdParamSchema` | Purges a custom role config |

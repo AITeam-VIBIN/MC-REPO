@@ -26,8 +26,28 @@ model User {
   ownedDocuments  Document[] @relation("DocumentOwner")
   lockedDocuments Document[] @relation("DocumentLocker")
   auditLogs       AuditLog[]
+  sessions        Session[]
 
   @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  device    String?
+  browser   String?
+  os        String?
+  ipAddress String?  @map("ip_address")
+  status    String   @default("ACTIVE")
+  isTrusted Boolean  @default(false) @map("is_trusted")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
 model Document {
