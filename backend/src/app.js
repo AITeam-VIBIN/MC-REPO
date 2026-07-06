@@ -13,6 +13,8 @@ import {
 } from './middleware/index.js';
 import authRouter from './auth/auth.routes.js';
 import securityRouter from './routes/security.routes.js';
+import vaultRouter from './routes/vault.routes.js';
+import documentsRouter from './routes/documents.routes.js';
 
 const app = express();
 
@@ -54,6 +56,12 @@ app.use('/api/v1/auth', authRouter);
 
 // Mount Consolidated Security router (Sessions, Devices, Roles, Permissions, Identity Activity)
 app.use('/api/v1', securityRouter);
+
+// Mount Vault and Folder router
+app.use('/api/v1', vaultRouter);
+
+// Mount Document router
+app.use('/api/v1/documents', documentsRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {

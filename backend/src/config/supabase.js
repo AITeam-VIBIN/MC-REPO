@@ -7,9 +7,69 @@ import env from './env.js';
  * @type {Readonly<{DOCUMENTS: string, PREVIEWS: string, AUDITS: string}>}
  */
 export const STORAGE_BUCKETS = Object.freeze({
-  DOCUMENTS: 'mc-documents',
-  PREVIEWS: 'mc-previews',
-  AUDITS: 'mc-audits-archive',
+  DOCUMENTS: process.env.STORAGE_BUCKET_DOCUMENTS || 'mc-documents',
+  SIGNATURES: process.env.STORAGE_BUCKET_SIGNATURES || 'mc-signatures',
+  REPORTS: process.env.STORAGE_BUCKET_REPORTS || 'mc-reports',
+  TEMPORARY: process.env.STORAGE_BUCKET_TEMPORARY || 'mc-temporary',
+});
+
+export const BUCKET_CONFIG = Object.freeze({
+  [STORAGE_BUCKETS.DOCUMENTS]: {
+    name: STORAGE_BUCKETS.DOCUMENTS,
+    allowedExtensions: ['pdf', 'docx', 'xlsx', 'pptx', 'jpg', 'png', 'zip'],
+    allowedMimeTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg',
+      'image/png',
+      'application/zip',
+    ],
+    maxSize: 50 * 1024 * 1024, // 50MB
+    accessRules: 'private',
+    expirySettings: null, // Permanent documents
+  },
+  [STORAGE_BUCKETS.SIGNATURES]: {
+    name: STORAGE_BUCKETS.SIGNATURES,
+    allowedExtensions: ['png', 'jpg', 'jpeg'],
+    allowedMimeTypes: ['image/png', 'image/jpeg'],
+    maxSize: 5 * 1024 * 1024, // 5MB
+    accessRules: 'private',
+    expirySettings: null,
+  },
+  [STORAGE_BUCKETS.REPORTS]: {
+    name: STORAGE_BUCKETS.REPORTS,
+    allowedExtensions: ['pdf', 'xlsx', 'csv'],
+    allowedMimeTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+    ],
+    maxSize: 20 * 1024 * 1024, // 20MB
+    accessRules: 'private',
+    expirySettings: {
+      expireInDays: 30,
+    },
+  },
+  [STORAGE_BUCKETS.TEMPORARY]: {
+    name: STORAGE_BUCKETS.TEMPORARY,
+    allowedExtensions: ['pdf', 'docx', 'xlsx', 'pptx', 'jpg', 'png', 'zip'],
+    allowedMimeTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg',
+      'image/png',
+      'application/zip',
+    ],
+    maxSize: 100 * 1024 * 1024, // 100MB
+    accessRules: 'private',
+    expirySettings: {
+      expireInSeconds: 3600 * 24, // 24 hours
+    },
+  },
 });
 
 let supabaseAnonInstance = null;
@@ -64,4 +124,5 @@ export default {
   supabaseAnon,
   supabaseAdmin,
   STORAGE_BUCKETS,
+  BUCKET_CONFIG,
 };
