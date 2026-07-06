@@ -249,14 +249,18 @@ export class StorageService {
    */
   static async checkObjectExistence(bucket, path) {
     try {
+      const hasSlash = path.includes('/');
+      const dir = hasSlash ? path.slice(0, path.lastIndexOf('/')) : '';
+      const filename = hasSlash ? path.slice(path.lastIndexOf('/') + 1) : path;
+
       const { data, error } = await supabaseAdmin.storage
         .from(bucket)
-        .list(path.slice(0, path.lastIndexOf('/')), {
-          search: path.slice(path.lastIndexOf('/') + 1),
+        .list(dir || undefined, {
+          search: filename,
         });
 
       if (error) throw error;
-      return data && data.length > 0;
+      return !!data?.some(f => f.name === filename);
     } catch (err) {
       throw handleStorageException(err, 'EXISTENCE_CHECK_FAILURE');
     }

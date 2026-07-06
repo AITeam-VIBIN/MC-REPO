@@ -1,4 +1,5 @@
 import DocumentService from '../services/documents.service.js';
+import { lifecycleService } from '../services/lifecycle.service.js';
 
 const documentService = new DocumentService();
 
@@ -21,6 +22,10 @@ function mapServiceErrorToHttp(err, res, next) {
       INVALID_OWNER: 400,
       INVALID_STATE_TRANSITION: 400,
       VALIDATION_FAILED: 400,
+      PERMISSION_DENIED: 403,
+      STORAGE_FAILURE: 500,
+      VERSION_NOT_FOUND: 404,
+      UNSUPPORTED_PREVIEW: 400,
     };
 
     const statusCode = errorMapping[err.code] || 400;
@@ -208,6 +213,286 @@ export class DocumentsController {
       res.status(200).json({
         success: true,
         message: 'Document deleted successfully.',
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Processes file upload payloads and routes to storage and DB creation.
+   * Supports both single and batch upload scenarios.
+   * 
+   * @async
+   * @method uploadDocument
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next function callback
+   */
+  async uploadDocument(req, res, next) {
+    try {
+      const ownerId = req.user?.id;
+      if (!ownerId) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'User context is missing.' }
+        });
+      }
+
+      // Extract and normalize metadata inputs from request form fields
+      const parseMetadata = (body) => {
+        const metadata = {
+          name: body.name || undefined,
+          description: body.description || undefined,
+          folderId: body.folderId === 'null' || body.folderId === '' ? null : body.folderId,
+          vaultId: body.vaultId === 'null' || body.vaultId === '' ? null : body.vaultId,
+          departmentId: body.departmentId === 'null' || body.departmentId === '' ? null : body.departmentId,
+          classification: body.classification || 'INTERNAL',
+          duplicatePolicy: body.duplicatePolicy || 'REJECT',
+          documentNumber: body.documentNumber || undefined,
+        };
+
+        if (body.tags) {
+          if (Array.isArray(body.tags)) {
+            metadata.tags = body.tags;
+          } else if (typeof body.tags === 'string') {
+            metadata.tags = body.tags.split(',').map(t => t.trim()).filter(Boolean);
+          }
+        }
+        return metadata;
+      };
+
+      const metadata = parseMetadata(req.body);
+
+      // 1. Handle Single File Upload scenario
+      if (req.file) {
+        const result = await documentService.uploadDocument(req.file, metadata, ownerId);
+        return res.status(201).json({
+          success: true,
+          message: 'Document uploaded and registered successfully.',
+          data: result,
+        });
+      }
+
+      // 2. Handle Multiple Batch File Uploads scenario
+      if (req.files && req.files.length > 0) {
+        const results = [];
+        for (const file of req.files) {
+          const fileMetadata = { ...metadata };
+          // For batch uploads, default individual target name to original filename
+          if (!fileMetadata.name) {
+            fileMetadata.name = file.originalname;
+          }
+          const result = await documentService.uploadDocument(file, fileMetadata, ownerId);
+          results.push(result);
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: `${results.length} documents uploaded and registered successfully.`,
+          data: results,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'No file payload was transmitted in the upload request.'
+        }
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Executes advanced document search requests based on query filters and paging.
+   * 
+   * @async
+   * @method searchDocuments
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async searchDocuments(req, res, next) {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'User context is missing.' }
+        });
+      }
+
+      const result = await documentService.searchDocuments(req.query, user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Documents searched successfully.',
+        data: result.documents,
+        meta: result.pagination,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Retrieves secure temporary signed preview URL information for a document.
+   * 
+   * @async
+   * @method getDocumentPreview
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async getDocumentPreview(req, res, next) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      const result = await documentService.getSecurePreview(id, user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Secure document preview details resolved.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Resolves expiring direct download link parameters for latest or historic versions.
+   * 
+   * @async
+   * @method downloadDocument
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async downloadDocument(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { version } = req.query;
+      const user = req.user;
+
+      const result = await documentService.getSecureDownloadUrl(id, version, user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Secure document download link resolved.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Generates secure expiring direct signed URL for general file access.
+   * 
+   * @async
+   * @method getDocumentAccessUrl
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async getDocumentAccessUrl(req, res, next) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      const result = await documentService.getSecureAccessUrl(id, user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Secure document access link resolved.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Lists all documents that are expiring soon.
+   * 
+   * @async
+   * @method getExpiringDocuments
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async getExpiringDocuments(req, res, next) {
+    try {
+      const user = req.user;
+      const result = await lifecycleService.getExpiringDocuments(user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Expiring documents retrieved successfully.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Lists all documents that are currently expired.
+   * 
+   * @async
+   * @method getExpiredDocuments
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async getExpiredDocuments(req, res, next) {
+    try {
+      const user = req.user;
+      const result = await lifecycleService.getExpiredDocuments(user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Expired documents retrieved successfully.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
+
+  /**
+   * Extends the expiry date of a document.
+   * 
+   * @async
+   * @method extendDocumentExpiry
+   * @param {import('express').Request} req - Express Request
+   * @param {import('express').Response} res - Express Response
+   * @param {import('express').NextFunction} next - Express Next callback
+   */
+  async extendDocumentExpiry(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { expiryDate } = req.body;
+      const user = req.user;
+
+      if (!expiryDate) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_FAILED', message: 'Missing target expiryDate parameter.' }
+        });
+      }
+
+      const result = await lifecycleService.extendExpiryDate(id, expiryDate, user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Document expiry extended successfully.',
+        data: result,
       });
     } catch (err) {
       mapServiceErrorToHttp(err, res, next);

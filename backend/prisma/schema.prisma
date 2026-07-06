@@ -18,6 +18,8 @@ enum DocumentStatus {
   ACTIVE
   INFECTED
   ARCHIVED
+  EXPIRING_SOON
+  EXPIRED
 }
 
 enum DocumentClassification {
@@ -39,6 +41,31 @@ enum ApprovalStatus {
   REJECTED
 }
 
+enum VaultType {
+  DEPARTMENT
+  PROJECT
+  CLIENT
+  CUSTOM
+}
+
+enum VaultStatus {
+  ACTIVE
+  ARCHIVED
+  DISABLED
+}
+
+enum FolderStatus {
+  ACTIVE
+  ARCHIVED
+  DISABLED
+}
+
+enum FolderPermissionType {
+  READ
+  WRITE
+  ADMIN
+}
+
 // =========================================================================
 // Models
 // =========================================================================
@@ -56,6 +83,8 @@ model User {
   ownedDocuments    Document[]        @relation("DocumentOwner")
   lockedDocuments   Document[]        @relation("DocumentLocker")
   folders           Folder[]
+  ownedVaults       Vault[]           @relation("VaultOwner")
+  folderPermissions FolderPermission[]
   requestedApprovals ApprovalRequest[] @relation("RequestedApprovals")
   approvedApprovals  ApprovalRequest[] @relation("ApprovedApprovals")
   auditLogs         AuditLog[]
@@ -93,34 +122,86 @@ model Department {
   users     User[]
   folders   Folder[]
   documents Document[]
+  vaults    Vault[]
 
   @@map("departments")
 }
 
-model Folder {
+model Vault {
   id           String      @id @default(uuid())
-  name         String
-  parentId     String?     @map("parent_id")
-  departmentId String?     @map("department_id")
+  name         String      @unique
+  description  String?
+  type         VaultType   @default(CUSTOM)
+  status       VaultStatus @default(ACTIVE)
   ownerId      String      @map("owner_id")
+  departmentId String?     @map("department_id")
+  isArchived   Boolean     @default(false) @map("is_archived")
+  isDeleted    Boolean     @default(false) @map("is_deleted")
+  deletedAt    DateTime?   @map("deleted_at")
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
   // Relationships
-  parent       Folder?     @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
-  subFolders   Folder[]    @relation("SubFolders")
+  owner        User        @relation("VaultOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  owner        User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  folders      Folder[]
   documents    Document[]
 
+  @@map("vaults")
+}
+
+model Folder {
+  id           String         @id @default(uuid())
+  name         String
+  parentId     String?        @map("parent_id")
+  vaultId      String?        @map("vault_id")
+  departmentId String?        @map("department_id")
+  ownerId      String         @map("owner_id")
+  
+  // Folder attributes
+  path         String         @default("/") @map("path")
+  status       FolderStatus   @default(ACTIVE)
+  isArchived   Boolean        @default(false) @map("is_archived")
+  isDeleted    Boolean        @default(false) @map("is_deleted")
+  deletedAt    DateTime?      @map("deleted_at")
+  
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  // Relationships
+  parent       Folder?        @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  subFolders   Folder[]       @relation("SubFolders")
+  vault        Vault?         @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  owner        User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  permissions  FolderPermission[]
+
   @@map("folders")
+}
+
+model FolderPermission {
+  id         String               @id @default(uuid())
+  folderId   String               @map("folder_id")
+  userId     String               @map("user_id")
+  permission FolderPermissionType @default(READ)
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  // Relationships
+  folder     Folder               @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("folder_permissions")
 }
 
 model Document {
   id              String                 @id @default(uuid())
   name            String
+  documentNumber  String?                @unique @map("document_number")
   description     String?
+  tags            String[]               @default([])
   folderId        String?                @map("folder_id")
+  vaultId         String?                @map("vault_id")
   departmentId    String?                @map("department_id")
   ownerId         String                 @map("owner_id")
   
@@ -137,6 +218,7 @@ model Document {
   // Lifecycle & security
   classification  DocumentClassification @default(INTERNAL)
   status          DocumentStatus         @default(PENDING_UPLOAD)
+  expiryDate      DateTime?              @map("expiry_date")
   version         Int                    @default(1)
   isLocked        Boolean                @default(false) @map("is_locked")
   lockedById      String?                @map("locked_by_id")
@@ -153,6 +235,7 @@ model Document {
   owner            User                   @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   lockedBy         User?                  @relation("DocumentLocker", fields: [lockedById], references: [id], onDelete: SetNull)
   folder           Folder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  vault            Vault?                 @relation(fields: [vaultId], references: [id], onDelete: SetNull)
   department       Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   versions         FileVersion[]
   auditLogs        AuditLog[]

@@ -208,18 +208,62 @@ export function sanitizeFilePath(filePath) {
   return clean.startsWith('/') ? clean.slice(1) : clean;
 }
 
-/**
- * Generates customized unique storage keys for object uploads.
- * 
- * @function createStorageKey
- * @param {string} prefix - Custom path prefix
- * @param {string} filename - Target filename
- * @returns {string} Unique sanitized storage key
- */
 export function createStorageKey(prefix, filename) {
   const cleanPrefix = sanitizeFilePath(prefix);
   const uniqueName = generateUniqueFilename(filename);
   return cleanPrefix ? `${cleanPrefix}/${uniqueName}` : uniqueName;
+}
+
+/**
+ * Maps MIME types to standard Preview types.
+ * 
+ * @function determinePreviewType
+ * @param {string} mimeType - MIME type string
+ * @returns {string|null} Resolved preview category type, or null if ineligible
+ */
+export function determinePreviewType(mimeType) {
+  if (!mimeType) return null;
+  const clean = mimeType.trim().toLowerCase();
+
+  if (clean === 'application/pdf') return 'PDF';
+  
+  if (clean === 'image/png' || clean === 'image/jpeg' || clean === 'image/jpg') {
+    return 'IMAGE';
+  }
+
+  const officeMimes = [
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ];
+  if (officeMimes.includes(clean)) return 'OFFICE';
+
+  if (clean === 'application/zip' || clean === 'application/x-zip-compressed') {
+    return 'ZIP_META';
+  }
+
+  return null;
+}
+
+/**
+ * Formats a BigInt or number byte size to standard string.
+ * 
+ * @function formatBytes
+ * @param {number|BigInt} bytes - Size in bytes
+ * @param {number} [decimals=2] - Decimals rounding parameter
+ * @returns {string} Formatted size representation string
+ */
+export function formatBytes(bytes, decimals = 2) {
+  const numBytes = Number(bytes);
+  if (numBytes === 0) return '0 Bytes';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+
+  const i = Math.floor(Math.log(numBytes) / Math.log(k));
+
+  return parseFloat((numBytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 export default {
@@ -236,4 +280,6 @@ export default {
   generateChecksum,
   sanitizeFilePath,
   createStorageKey,
+  determinePreviewType,
+  formatBytes,
 };

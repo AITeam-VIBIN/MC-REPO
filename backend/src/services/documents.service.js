@@ -1,6 +1,11 @@
+import crypto from 'crypto';
 import { prisma } from '../config/database.js';
 import DocumentRepository from '../repositories/documents.repository.js';
-import { generateSlug } from '../utils/vault.util.js';
+import { generateDocumentStoragePath } from '../utils/documents.util.js';
+import { generateChecksum, handleDuplicateName, determinePreviewType, formatBytes } from '../utils/storage.util.js';
+import { StorageService } from './storage/storage.service.js';
+import { STORAGE_BUCKETS } from '../config/supabase.js';
+import { lifecycleService } from './lifecycle.service.js';
 
 const documentRepository = new DocumentRepository();
 
@@ -47,6 +52,10 @@ export class DocumentResponseDto {
     this.lockedAt = docRecord.lockedAt || null;
     this.createdAt = docRecord.createdAt;
     this.updatedAt = docRecord.updatedAt;
+    this.expiryDate = docRecord.expiryDate ? docRecord.expiryDate.toISOString() : null;
+    this.daysRemaining = docRecord.expiryDate ? lifecycleService.calculateDaysRemaining(docRecord.expiryDate) : null;
+    this.retentionPolicy = docRecord.classification;
+    this.lastUpdated = docRecord.updatedAt;
 
     if (docRecord.owner) {
       this.owner = {
@@ -382,6 +391,502 @@ export class DocumentService {
 
     const updated = await documentRepository.softDelete(id);
     return DocumentResponseDto.fromRecord(updated);
+  }
+
+  /**
+   * Verifies folder permission rules for a user context.
+   * 
+   * @async
+   * @private
+   * @method _verifyFolderWritePermission
+   * @param {string} folderId - Target folder UUID
+   * @param {string} userId - User UUID
+   * @returns {Promise<boolean>} True if permitted, false otherwise
+   */
+  async _verifyFolderWritePermission(folderId, userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    // Admin role bypasses folder permissions
+    if (user?.role === 'ADMIN') return true;
+
+    const folder = await prisma.folder.findUnique({
+      where: { id: folderId },
+      select: { ownerId: true },
+    });
+
+    if (!folder) return false;
+
+    // Folder owner has write permission
+    if (folder.ownerId === userId) return true;
+
+    // Check explicit permissions
+    const permissions = await prisma.folderPermission.findMany({
+      where: { folderId },
+    });
+
+    // If folder has no permissions configured, fallback to allowed
+    if (permissions.length === 0) return true;
+
+    // Look for the user's specific permission
+    const userPermission = permissions.find(p => p.userId === userId);
+    if (userPermission && ['WRITE', 'ADMIN'].includes(userPermission.permission)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Performs file upload to storage and persists database metadata in a transaction-like manner.
+   * 
+   * @async
+   * @method uploadDocument
+   * @param {Object} file - Multer file object
+   * @param {Object} metadata - Metadata fields
+   * @param {string} ownerId - ID of user executing upload
+   * @returns {Promise<DocumentResponseDto>}
+   */
+  async uploadDocument(file, metadata, ownerId) {
+    // 1. Enforce validation of relation constraints
+    await this._validateRelationalConstraints({
+      folderId: metadata.folderId || null,
+      vaultId: metadata.vaultId || null,
+      departmentId: metadata.departmentId || null,
+      ownerId,
+    });
+
+    // 2. Validate classification if provided
+    if (metadata.classification) {
+      this._validateClassification(metadata.classification);
+    }
+
+    // 3. Folder authorization check
+    if (metadata.folderId) {
+      const isPermitted = await this._verifyFolderWritePermission(metadata.folderId, ownerId);
+      if (!isPermitted) {
+        throw new DocumentServiceError('You do not have write permissions for this folder.', 'PERMISSION_DENIED');
+      }
+    }
+
+    // 4. Extract and normalize filename
+    const originalName = file.originalname;
+    let targetName = metadata.name || originalName;
+    this._validateDocumentName(targetName);
+
+    // 5. Generate checksum (SHA-256)
+    const checksum = generateChecksum(file.buffer);
+
+    // 6. Check duplicate policy
+    const duplicatePolicy = metadata.duplicatePolicy || 'REJECT'; // 'REJECT' or 'RENAME'
+    
+    // Check if duplicate content exists
+    const duplicateChecksum = await prisma.document.findFirst({
+      where: {
+        folderId: metadata.folderId || null,
+        vaultId: metadata.vaultId || null,
+        checksum,
+        isDeleted: false,
+      },
+    });
+
+    if (duplicateChecksum) {
+      throw new DocumentServiceError(
+        `A document with identical content (checksum) already exists in this folder path.`,
+        'DUPLICATE_DOCUMENT'
+      );
+    }
+
+    const hasDuplicateName = await prisma.document.findFirst({
+      where: {
+        name: targetName,
+        folderId: metadata.folderId || null,
+        vaultId: metadata.vaultId || null,
+        isDeleted: false,
+      },
+    });
+
+    if (hasDuplicateName) {
+      if (duplicatePolicy === 'REJECT') {
+        throw new DocumentServiceError(
+          `A document named "${targetName}" already exists in this folder.`,
+          'DUPLICATE_DOCUMENT'
+        );
+      } else if (duplicatePolicy === 'RENAME') {
+        // Find existing names in the same folder path
+        const existingDocs = await prisma.document.findMany({
+          where: {
+            folderId: metadata.folderId || null,
+            vaultId: metadata.vaultId || null,
+            isDeleted: false,
+          },
+          select: { name: true },
+        });
+        const existingNames = existingDocs.map(d => d.name);
+        targetName = handleDuplicateName(targetName, existingNames);
+      }
+    }
+
+    // 7. Generate dynamic path parameters
+    let deptName = 'default';
+    if (metadata.departmentId) {
+      const dept = await prisma.department.findUnique({
+        where: { id: metadata.departmentId },
+        select: { name: true },
+      });
+      if (dept) deptName = dept.name;
+    }
+
+    const documentId = crypto.randomUUID();
+    const version = 1;
+    
+    const storagePath = generateDocumentStoragePath({
+      departmentId: deptName,
+      documentId,
+      version,
+      filename: targetName,
+    });
+
+    // 8. Perform upload (Supabase Storage)
+    try {
+      await StorageService.uploadObject(
+        STORAGE_BUCKETS.DOCUMENTS,
+        storagePath,
+        file.buffer,
+        { contentType: file.mimetype }
+      );
+    } catch (err) {
+      throw new DocumentServiceError(`Storage upload failed: ${err.message}`, 'STORAGE_FAILURE');
+    }
+
+    // 9. Persist database record with atomic rollback checks
+    try {
+      const classification = metadata.classification || 'INTERNAL';
+      const expiryDate = lifecycleService.calculateExpiryDate(new Date(), classification);
+
+      const doc = await documentRepository.create({
+        id: documentId,
+        name: targetName,
+        documentNumber: metadata.documentNumber,
+        description: metadata.description,
+        tags: metadata.tags,
+        folderId: metadata.folderId || null,
+        vaultId: metadata.vaultId || null,
+        departmentId: metadata.departmentId || null,
+        ownerId,
+        storageProvider: 'SUPABASE',
+        storageBucket: STORAGE_BUCKETS.DOCUMENTS,
+        storagePath,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        checksum,
+        classification,
+        status: 'ACTIVE',
+        version,
+        expiryDate,
+      });
+
+      return DocumentResponseDto.fromRecord(doc);
+    } catch (dbErr) {
+      // Rollback file upload in Supabase Storage
+      console.warn(`[Atomic Rollback Triggered] Deleting orphaned file at path: ${storagePath}`);
+      try {
+        await StorageService.deleteObject(STORAGE_BUCKETS.DOCUMENTS, storagePath);
+      } catch (delErr) {
+        console.error(`[Critical Error] Failed to delete orphaned storage object during database rollback:`, delErr);
+      }
+      throw dbErr; // Rethrow database error
+    }
+  }
+
+  /**
+   * Performs advanced document searching with filters and pagination metadata.
+   * 
+   * @async
+   * @method searchDocuments
+   * @param {Object} params - Query filters and pagination
+   * @param {Object} user - Authenticated user context
+   * @returns {Promise<Object>} Results and pagination metadata DTO
+   */
+  async searchDocuments(params, user) {
+    // 1. Resolve security visibility bounds
+    let securityClause = {};
+    if (user.role !== 'ADMIN') {
+      const userDb = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { departmentId: true },
+      });
+
+      securityClause = {
+        OR: [
+          { ownerId: user.id },
+          { classification: 'PUBLIC' },
+          ...(userDb?.departmentId ? [{ departmentId: userDb.departmentId }] : []),
+          {
+            folder: {
+              permissions: {
+                some: {
+                  userId: user.id,
+                }
+              }
+            }
+          }
+        ]
+      };
+    }
+
+    // 2. Normalize and prepare filter parameters
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      search,
+      id,
+      name,
+      description,
+      documentNumber,
+      tags,
+      folderId,
+      vaultId,
+      departmentId,
+      ownerId,
+      classification,
+      status,
+      mimeType,
+      extension,
+      minSize,
+      maxSize,
+      createdAtStart,
+      createdAtEnd,
+      updatedAtStart,
+      updatedAtEnd,
+    } = params;
+
+    // Normalizing tag arrays if passed as comma-separated string
+    let normalizedTags = undefined;
+    if (tags) {
+      normalizedTags = Array.isArray(tags)
+        ? tags
+        : tags.toString().split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    }
+
+    // Validate classifications if passed
+    if (classification) {
+      this._validateClassification(classification);
+    }
+
+    const { documents, total } = await documentRepository.search({
+      page: Number(page),
+      limit: Number(limit),
+      sortBy,
+      sortOrder,
+      search,
+      id,
+      name,
+      description,
+      documentNumber,
+      tags: normalizedTags,
+      folderId,
+      vaultId,
+      departmentId,
+      ownerId,
+      classification,
+      status,
+      mimeType,
+      extension,
+      minSize: minSize !== undefined ? Number(minSize) : undefined,
+      maxSize: maxSize !== undefined ? Number(maxSize) : undefined,
+      createdAtStart,
+      createdAtEnd,
+      updatedAtStart,
+      updatedAtEnd,
+      securityClause,
+    });
+
+    const totalRecords = total;
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Number(page);
+
+    return {
+      documents: documents.map(DocumentResponseDto.fromRecord),
+      pagination: {
+        currentPage,
+        totalPages,
+        totalRecords,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+      }
+    };
+  }
+
+  /**
+   * Verifies document access permissions based on role, ownership, and department/folder boundaries.
+   * 
+   * @async
+   * @method verifyDocumentAccess
+   * @param {Object} doc - Document DB record
+   * @param {Object} user - User context
+   * @returns {Promise<boolean>} True if permitted, false otherwise
+   */
+  async verifyDocumentAccess(doc, user) {
+    if (user.role === 'ADMIN') return true;
+    if (doc.ownerId === user.id) return true;
+    if (doc.classification === 'PUBLIC') return true;
+
+    // Resolve user's department
+    const userDb = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { departmentId: true },
+    });
+    if (userDb?.departmentId && doc.departmentId === userDb.departmentId) {
+      return true;
+    }
+
+    // Check folder permission record
+    if (doc.folderId) {
+      const folderPerm = await prisma.folderPermission.findFirst({
+        where: {
+          folderId: doc.folderId,
+          userId: user.id,
+        },
+      });
+      if (folderPerm && ['READ', 'WRITE', 'ADMIN'].includes(folderPerm.permission)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Generates secure temporary signed preview URL details for a document.
+   * 
+   * @async
+   * @method getSecurePreview
+   * @param {string} id - Document UUID
+   * @param {Object} user - Authenticated user context
+   * @returns {Promise<Object>} Preview details DTO containing expiring signed URL
+   */
+  async getSecurePreview(id, user) {
+    const doc = await documentRepository.findById(id);
+    if (!doc || doc.isDeleted) {
+      throw new DocumentServiceError('Document not found or deleted.', 'DOCUMENT_NOT_FOUND');
+    }
+
+    // Check archived rules
+    if (doc.status === 'ARCHIVED' && user.role !== 'ADMIN') {
+      throw new DocumentServiceError('Archived files can only be accessed by administrator roles.', 'PERMISSION_DENIED');
+    }
+
+    // Verify user visibility permissions
+    const isPermitted = await this.verifyDocumentAccess(doc, user);
+    if (!isPermitted) {
+      throw new DocumentServiceError('You do not have permission to access this document.', 'PERMISSION_DENIED');
+    }
+
+    // Verify preview type eligibility
+    const previewType = determinePreviewType(doc.mimeType);
+    if (!previewType) {
+      throw new DocumentServiceError('This document format is not supported for inline previewing.', 'UNSUPPORTED_PREVIEW');
+    }
+
+    // Generate signed preview link (300 seconds window)
+    let urlData;
+    try {
+      urlData = await StorageService.generateDownloadUrl(doc.storageBucket, doc.storagePath, 300);
+    } catch (err) {
+      throw new DocumentServiceError(`Failed to fetch secure storage link: ${err.message}`, 'STORAGE_FAILURE');
+    }
+
+    // Future Audit integration hooks
+    console.info('[Audit Hook] Document viewed event', { documentId: id, userId: user.id });
+
+    return {
+      documentId: doc.id,
+      name: doc.name,
+      mimeType: doc.mimeType,
+      fileSize: formatBytes(doc.fileSize),
+      version: doc.version,
+      previewType,
+      temporaryAccessUrl: urlData.signedUrl,
+      expiresAt: new Date(Date.now() + 300 * 1000).toISOString(),
+    };
+  }
+
+  /**
+   * Generates secure expiring download URL for a document.
+   * Supports specific version fetching.
+   * 
+   * @async
+   * @method getSecureDownloadUrl
+   * @param {string} id - Document UUID
+   * @param {number|string} [versionNumber] - Optional specific version identifier
+   * @param {Object} user - Authenticated user context
+   * @returns {Promise<Object>} Signed download payload containing expiring link
+   */
+  async getSecureDownloadUrl(id, versionNumber, user) {
+    const doc = await documentRepository.findById(id);
+    if (!doc || doc.isDeleted) {
+      throw new DocumentServiceError('Document not found or deleted.', 'DOCUMENT_NOT_FOUND');
+    }
+
+    // Status checks
+    if (doc.status === 'ARCHIVED' && user.role !== 'ADMIN') {
+      throw new DocumentServiceError('Archived documents can only be downloaded by administrators.', 'PERMISSION_DENIED');
+    }
+
+    // Verify permission boundary
+    const isPermitted = await this.verifyDocumentAccess(doc, user);
+    if (!isPermitted) {
+      throw new DocumentServiceError('You do not have permission to download this document.', 'PERMISSION_DENIED');
+    }
+
+    // Resolve target path (either latest or historic version revision)
+    let targetPath = doc.storagePath;
+    let targetVersion = doc.version;
+
+    if (versionNumber) {
+      const parsedVer = Number(versionNumber);
+      if (parsedVer !== doc.version) {
+        const verRecord = await documentRepository.findVersionRecord(id, parsedVer);
+        if (!verRecord) {
+          throw new DocumentServiceError(`Version ${parsedVer} of this document does not exist.`, 'VERSION_NOT_FOUND');
+        }
+        targetPath = verRecord.filePath;
+        targetVersion = verRecord.version;
+      }
+    }
+
+    // Generate signed link (15 minutes download window)
+    let urlData;
+    try {
+      urlData = await StorageService.generateDownloadUrl(doc.storageBucket, targetPath, 900);
+    } catch (err) {
+      throw new DocumentServiceError(`Failed to fetch secure storage link: ${err.message}`, 'STORAGE_FAILURE');
+    }
+
+    // Future Audit integration hooks
+    console.info('[Audit Hook] Document downloaded event', { documentId: id, version: targetVersion, userId: user.id });
+
+    return {
+      temporaryAccessUrl: urlData.signedUrl,
+      expiresAt: new Date(Date.now() + 900 * 1000).toISOString(),
+    };
+  }
+
+  /**
+   * Gateway alias resolving temporary access signed URL.
+   * 
+   * @async
+   * @method getSecureAccessUrl
+   * @param {string} id - Document UUID
+   * @param {Object} user - Authenticated user context
+   * @returns {Promise<Object>} Payload containing signed URL
+   */
+  async getSecureAccessUrl(id, user) {
+    return this.getSecureDownloadUrl(id, undefined, user);
   }
 }
 

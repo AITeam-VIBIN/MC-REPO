@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import env from '../config/env.js';
 import { getQueueConnectionOptions, defaultJobOptions, queueConfigs } from '../config/bullmq.js';
+import { lifecycleService } from '../services/lifecycle.service.js';
 
 // --- Mocks for Offline Mode ---
 class MockQueue {
@@ -95,7 +96,23 @@ async function processReportJob(job) {
 
 async function processSchedulerJob(job) {
   console.log(`[Scheduler Worker] Processing job ID ${job.id} (Schedule: ${job.name})`);
-  // Placeholder for locks sweeper and drafts cleanups
+  try {
+    if (job.name === 'daily-expiry-scan') {
+      const summary = await lifecycleService.runDailyExpiryScan();
+      console.log(`[Scheduler Worker] daily-expiry-scan result:`, summary);
+    } else if (job.name === 'retention-processor') {
+      const summary = await lifecycleService.runRetentionProcessor();
+      console.log(`[Scheduler Worker] retention-processor result:`, summary);
+    } else if (job.name === 'cleanup-preparation') {
+      const summary = await lifecycleService.runCleanupPreparation();
+      console.log(`[Scheduler Worker] cleanup-preparation result:`, summary);
+    } else {
+      console.log(`[Scheduler Worker] Unrecognized schedule job name: ${job.name}`);
+    }
+  } catch (err) {
+    console.error(`[Scheduler Worker] Error executing scheduler job:`, err);
+    throw err;
+  }
 }
 
 async function processVirusJob(job) {

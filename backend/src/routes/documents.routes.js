@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { DocumentsController } from '../controllers/documents.controller.js';
 import { requireAuth, requireSession } from '../middleware/index.js';
+import { uploadMultiple } from '../middleware/upload.middleware.js';
 import {
   createDocumentSchema,
   updateDocumentSchema,
@@ -53,6 +54,39 @@ router.get('/', validate(listDocumentsSchema), documentsController.listDocuments
 
 /**
  * @openapi
+ * /documents/search:
+ *   get:
+ *     summary: Search documents
+ *     description: Executes advanced searching against document properties and meta contexts.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/search', documentsController.searchDocuments);
+
+/**
+ * @openapi
+ * /documents/expiring:
+ *   get:
+ *     summary: List expiring documents
+ *     description: Retrieves list of documents that are expiring soon.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/expiring', documentsController.getExpiringDocuments);
+
+/**
+ * @openapi
+ * /documents/expired:
+ *   get:
+ *     summary: List expired documents
+ *     description: Retrieves list of documents that are currently expired.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/expired', documentsController.getExpiredDocuments);
+
+/**
+ * @openapi
  * /documents/{id}:
  *   get:
  *     summary: Get document details
@@ -97,6 +131,17 @@ router.patch('/:id/restore', validate(idParamSchema), documentsController.restor
 
 /**
  * @openapi
+ * /documents/{id}/extend-expiry:
+ *   patch:
+ *     summary: Extend document expiry date
+ *     description: Extends the compliance expiry date target for active/expired documents.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.patch('/:id/extend-expiry', validate(idParamSchema), documentsController.extendDocumentExpiry);
+
+/**
+ * @openapi
  * /documents/{id}:
  *   delete:
  *     summary: Soft-delete document
@@ -105,5 +150,49 @@ router.patch('/:id/restore', validate(idParamSchema), documentsController.restor
  *       - BearerAuth: []
  */
 router.delete('/:id', validate(idParamSchema), documentsController.softDeleteDocument);
+
+/**
+ * @openapi
+ * /documents/upload:
+ *   post:
+ *     summary: Upload document files and metadata
+ *     description: Uploads files to storage and registers metadata profiles inside postgres.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.post('/upload', uploadMultiple, documentsController.uploadDocument);
+
+/**
+ * @openapi
+ * /documents/{id}/preview:
+ *   get:
+ *     summary: Get document preview link
+ *     description: Resolves temporary expiring link parameters to preview files inline.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/:id/preview', validate(idParamSchema), documentsController.getDocumentPreview);
+
+/**
+ * @openapi
+ * /documents/{id}/download:
+ *   get:
+ *     summary: Download document file
+ *     description: Resolves secure download link for latest or historical document versions.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/:id/download', validate(idParamSchema), documentsController.downloadDocument);
+
+/**
+ * @openapi
+ * /documents/{id}/access-url:
+ *   get:
+ *     summary: Resolve general access URL
+ *     description: Generates expiring access URL for third-party operations.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/:id/access-url', validate(idParamSchema), documentsController.getDocumentAccessUrl);
 
 export default router;

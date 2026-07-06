@@ -91,6 +91,7 @@ export class DocumentRepository {
     try {
       return await prisma.document.create({
         data: {
+          id: data.id || undefined,
           name: data.name,
           documentNumber: data.documentNumber || null,
           description: data.description || null,
@@ -108,6 +109,7 @@ export class DocumentRepository {
           classification: data.classification || 'INTERNAL',
           status: data.status || 'PENDING_UPLOAD',
           version: data.version || 1,
+          expiryDate: data.expiryDate || null,
         },
         include: this._defaultIncludes,
       });
@@ -479,6 +481,281 @@ export class DocumentRepository {
       });
     } catch (err) {
       handlePrismaError(err, 'getDocumentsCountByClassification');
+    }
+  }
+
+  /**
+   * Performs advanced document search with complex filtering and security context routing.
+   * 
+   * @async
+   * @method search
+   * @param {Object} params - Advanced search and sorting parameters
+   * @returns {Promise<{documents: Array<Object>, total: number}>} List of documents and count
+   * @throws {DocumentRepositoryError}
+   */
+  async search(params = {}) {
+    try {
+      const {
+        page = 1,
+        limit = 10,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+        search,
+        id,
+        name,
+        description,
+        documentNumber,
+        tags,
+        folderId,
+        vaultId,
+        departmentId,
+        ownerId,
+        classification,
+        status,
+        mimeType,
+        extension,
+        minSize,
+        maxSize,
+        createdAtStart,
+        createdAtEnd,
+        updatedAtStart,
+        updatedAtEnd,
+        securityClause = {},
+      } = params;
+
+      const skip = (page - 1) * limit;
+
+      // Construct dynamic filters
+      const whereClause = {
+        isDeleted: false,
+        ...securityClause,
+        ...(id && { id }),
+        ...(name && { name: { contains: name, mode: 'insensitive' } }),
+        ...(description && { description: { contains: description, mode: 'insensitive' } }),
+        ...(documentNumber && { documentNumber: { contains: documentNumber, mode: 'insensitive' } }),
+        ...(folderId && { folderId }),
+        ...(vaultId && { vaultId }),
+        ...(departmentId && { departmentId }),
+        ...(ownerId && { ownerId }),
+        ...(classification && { classification }),
+        ...(status && { status }),
+        ...(mimeType && { mimeType: { contains: mimeType, mode: 'insensitive' } }),
+        
+        ...(extension && {
+          name: { endsWith: `.${extension.toLowerCase()}`, mode: 'insensitive' }
+        }),
+
+        ...(tags && tags.length > 0 && {
+          tags: { hasSome: tags },
+        }),
+
+        ...((minSize !== undefined || maxSize !== undefined) && {
+          fileSize: {
+            ...(minSize !== undefined && { gte: BigInt(minSize) }),
+            ...(maxSize !== undefined && { lte: BigInt(maxSize) }),
+          }
+        }),
+
+        ...((createdAtStart || createdAtEnd) && {
+          createdAt: {
+            ...(createdAtStart && { gte: new Date(createdAtStart) }),
+            ...(createdAtEnd && { lte: new Date(createdAtEnd) }),
+          }
+        }),
+        ...((updatedAtStart || updatedAtEnd) && {
+          updatedAt: {
+            ...(updatedAtStart && { gte: new Date(updatedAtStart) }),
+            ...(updatedAtEnd && { lte: new Date(updatedAtEnd) }),
+          }
+        }),
+
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { documentNumber: { contains: search, mode: 'insensitive' } },
+            { storagePath: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      };
+
+      const [documents, total] = await prisma.$transaction([
+        prisma.document.findMany({
+          where: whereClause,
+          include: this._defaultIncludes,
+          orderBy: { [sortBy]: sortOrder },
+          take: limit,
+          skip,
+        }),
+        prisma.document.count({
+          where: whereClause,
+        }),
+      ]);
+
+      return { documents, total };
+    } catch (err) {
+      handlePrismaError(err, 'search');
+    }
+  }
+
+  /**
+   * Find a specific document version record.
+   * 
+   * @async
+   * @method findVersionRecord
+   * @param {string} documentId - Target document UUID
+   * @param {number} versionNumber - Version revision number
+   * @returns {Promise<Object|null>} File version record
+   * @throws {DocumentRepositoryError}
+   */
+  async findVersionRecord(documentId, versionNumber) {
+    try {
+      return await prisma.fileVersion.findFirst({
+        where: {
+          documentId,
+          version: versionNumber,
+        },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'findVersionRecord');
+    }
+  }
+
+  /**
+   * Verifies if a document metadata profile exists by ID.
+   * 
+   * @async
+   * @method verifyDocumentExists
+   * @param {string} id - Document UUID
+   * @returns {Promise<boolean>} True if exists, false otherwise
+   * @throws {DocumentRepositoryError}
+   */
+  async verifyDocumentExists(id) {
+    try {
+      const count = await prisma.document.count({
+        where: { id, isDeleted: false },
+      });
+      return count > 0;
+    } catch (err) {
+      handlePrismaError(err, 'verifyDocumentExists');
+    }
+  }
+
+  /**
+   * Find documents that are expiring within a certain number of days (status is ACTIVE or EXPIRING_SOON).
+   * 
+   * @async
+   * @method findExpiringDocuments
+   * @param {number} [days=30] - Expiry threshold window in days
+   * @returns {Promise<Array<Object>>} List of expiring document records
+   * @throws {DocumentRepositoryError}
+   */
+  async findExpiringDocuments(days = 30) {
+    try {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + days);
+
+      return await prisma.document.findMany({
+        where: {
+          isDeleted: false,
+          status: { in: ['ACTIVE', 'EXPIRING_SOON'] },
+          expiryDate: {
+            gt: new Date(),
+            lte: targetDate,
+          },
+        },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'findExpiringDocuments');
+    }
+  }
+
+  /**
+   * Find documents that have crossed their expiry date but are not marked EXPIRED yet.
+   * 
+   * @async
+   * @method findExpiredDocuments
+   * @returns {Promise<Array<Object>>} List of expired document records
+   * @throws {DocumentRepositoryError}
+   */
+  async findExpiredDocuments() {
+    try {
+      return await prisma.document.findMany({
+        where: {
+          isDeleted: false,
+          status: { not: 'EXPIRED' },
+          expiryDate: {
+            lte: new Date(),
+          },
+        },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'findExpiredDocuments');
+    }
+  }
+
+  /**
+   * Update the lifecycle status of a document.
+   * 
+   * @async
+   * @method updateLifecycleStatus
+   * @param {string} id - Document primary UUID
+   * @param {string} status - New DocumentStatus value
+   * @returns {Promise<Object>} Updated document record
+   * @throws {DocumentRepositoryError}
+   */
+  async updateLifecycleStatus(id, status) {
+    try {
+      return await prisma.document.update({
+        where: { id },
+        data: { status },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'updateLifecycleStatus');
+    }
+  }
+
+  /**
+   * Update the expiry date of a document.
+   * 
+   * @async
+   * @method updateExpiryDate
+   * @param {string} id - Document primary UUID
+   * @param {Date|null} expiryDate - Expiry date target
+   * @returns {Promise<Object>} Updated document record
+   * @throws {DocumentRepositoryError}
+   */
+  async updateExpiryDate(id, expiryDate) {
+    try {
+      return await prisma.document.update({
+        where: { id },
+        data: { expiryDate },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'updateExpiryDate');
+    }
+  }
+
+  /**
+   * Bulk updates lifecycle statuses for matching document IDs.
+   * 
+   * @async
+   * @method bulkUpdateLifecycle
+   * @param {Array<string>} ids - List of document primary UUIDs
+   * @param {string} status - New DocumentStatus value
+   * @returns {Promise<Object>} Prisma affected count payload
+   * @throws {DocumentRepositoryError}
+   */
+  async bulkUpdateLifecycle(ids, status) {
+    try {
+      return await prisma.document.updateMany({
+        where: {
+          id: { in: ids },
+        },
+        data: { status },
+      });
+    } catch (err) {
+      handlePrismaError(err, 'bulkUpdateLifecycle');
     }
   }
 }
