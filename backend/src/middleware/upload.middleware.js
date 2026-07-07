@@ -21,9 +21,10 @@ const upload = multer({
  * 
  * @function validateUploadedFile
  * @param {Express.Multer.File} file - Multer parsed file object
+ * @param {string} [bucketName] - Target storage bucket identifier
  * @throws {Error} If validation constraints are violated
  */
-function validateUploadedFile(file) {
+function validateUploadedFile(file, bucketName = STORAGE_BUCKETS.DOCUMENTS) {
   if (!file) {
     throw new Error('No file payload was transmitted in the upload request.');
   }
@@ -34,18 +35,18 @@ function validateUploadedFile(file) {
   }
 
   // 2. Validate format extension
-  if (!validateFileExtension(file.originalname, STORAGE_BUCKETS.DOCUMENTS)) {
-    throw new Error(`File format is not supported for filename: "${file.originalname}". Supported formats: PDF, DOCX, XLSX, PPTX, JPG, PNG, ZIP`);
+  if (!validateFileExtension(file.originalname, bucketName)) {
+    throw new Error(`File format is not supported for filename: "${file.originalname}".`);
   }
 
   // 3. Validate MIME type
-  if (!validateMimeType(file.mimetype, STORAGE_BUCKETS.DOCUMENTS)) {
+  if (!validateMimeType(file.mimetype, bucketName)) {
     throw new Error(`File MIME type is invalid or unsupported: "${file.mimetype}"`);
   }
 
   // 4. Validate file size
-  if (!validateFileSize(file.size, STORAGE_BUCKETS.DOCUMENTS)) {
-    throw new Error(`File size is too large (limit is 50MB). File size: ${file.size} bytes.`);
+  if (!validateFileSize(file.size, bucketName)) {
+    throw new Error(`File size is too large for the target bucket. File size: ${file.size} bytes.`);
   }
 }
 
@@ -148,7 +149,61 @@ export const uploadMultiple = (req, res, next) => {
   });
 };
 
+/**
+ * Middleware handling single digital signature file uploads under form field 'file'.
+ */
+export const uploadSignature = (req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  if (contentType.includes('multipart/form-data')) {
+    upload.single('file')(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'Signature file size exceeds maximum allowed threshold (5MB).'
+            }
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_FAILED',
+            message: err.message
+          }
+        });
+      }
+
+      try {
+        if (!req.file) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'No file payload was transmitted under the field name "file".'
+            }
+          });
+        }
+        validateUploadedFile(req.file, STORAGE_BUCKETS.SIGNATURES);
+        next();
+      } catch (validationErr) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_FAILED',
+            message: validationErr.message
+          }
+        });
+      }
+    });
+  } else {
+    next();
+  }
+};
+
 export default {
   uploadSingle,
   uploadMultiple,
+  uploadSignature,
 };

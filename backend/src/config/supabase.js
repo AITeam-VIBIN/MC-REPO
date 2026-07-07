@@ -32,8 +32,8 @@ export const BUCKET_CONFIG = Object.freeze({
   },
   [STORAGE_BUCKETS.SIGNATURES]: {
     name: STORAGE_BUCKETS.SIGNATURES,
-    allowedExtensions: ['png', 'jpg', 'jpeg'],
-    allowedMimeTypes: ['image/png', 'image/jpeg'],
+    allowedExtensions: ['png', 'jpg', 'jpeg', 'pdf'],
+    allowedMimeTypes: ['image/png', 'image/jpeg', 'application/pdf'],
     maxSize: 5 * 1024 * 1024, // 5MB
     accessRules: 'private',
     expirySettings: null,

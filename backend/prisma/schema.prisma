@@ -61,6 +61,27 @@ enum ApprovalReferenceType {
   EXTERNAL_SHARE
 }
 
+enum SignatureType {
+  DRAWN
+  UPLOADED
+  CERTIFICATE
+}
+
+enum SignatureStatus {
+  CREATED
+  PENDING_VERIFICATION
+  VERIFIED
+  FAILED
+  REVOKED
+}
+
+enum SignatureReferenceType {
+  CHECKOUT
+  RETURN
+  APPROVAL
+  DOCUMENT
+}
+
 enum VaultType {
   DEPARTMENT
   PROJECT
@@ -112,6 +133,8 @@ model User {
   sessions          Session[]
   requestedCheckouts Checkout[] @relation("RequestedCheckouts")
   approvedCheckouts  Checkout[] @relation("ApprovedCheckouts")
+  signatures         DigitalSignature[] @relation("UserSignatures")
+  verifiedSignatures DigitalSignature[] @relation("VerifierSignatures")
 
   @@map("users")
 }
@@ -520,4 +543,89 @@ model CheckoutMovement {
 
   @@index([checkoutId])
   @@map("checkout_movements")
+}
+
+model DigitalSignature {
+  id                  String                 @id @default(uuid())
+  signatureRefNumber  String                 @unique @map("signature_ref_number")
+  signatureType       SignatureType          @map("signature_type")
+  status              SignatureStatus        @default(CREATED)
+
+  // Owner snapshots
+  userId              String                 @map("user_id")
+  userSnapshot        String?                @map("user_snapshot")
+  departmentSnapshot  String?                @map("department_snapshot")
+
+  // Reference binding
+  referenceType       SignatureReferenceType @map("reference_type")
+  referenceId         String                 @map("reference_id")
+
+  // Storage details
+  storageProvider     String                 @default("SUPABASE") @map("storage_provider")
+  bucketName          String                 @map("bucket_name")
+  storagePath         String                 @map("storage_path")
+  fileHash            String?                @map("file_hash")
+  signatureHash       String                 @map("signature_hash")
+
+  // Signature data
+  originalFilename    String?                @map("original_filename")
+  mimeType            String?                @map("mime_type")
+  fileSize            BigInt?                @map("file_size")
+  checksum            String?
+  encodingMetadata    String?                @map("encoding_metadata")
+
+  // Verification data
+  verificationStatus  String?                @map("verification_status")
+  verificationHash    String?                @map("verification_hash")
+  verifiedBy          String?                @map("verified_by")
+  verifiedAt          DateTime?              @map("verified_at")
+  verificationMethod  String?                @map("verification_method")
+  verificationAttempts Int                 @default(0) @map("verification_attempts")
+  lastVerificationAttemptAt DateTime?        @map("last_verification_attempt_at")
+
+  // Transaction binding
+  transactionId       String?                @map("transaction_id")
+  transactionType     String?                @map("transaction_type")
+  transactionSnapshot Json?                  @map("transaction_snapshot")
+  bindingHash         String?                @map("binding_hash")
+  boundAt             DateTime?              @map("bound_at")
+  boundBy             String?                @map("bound_by")
+  bindingStatus       String?                @map("binding_status")
+
+  // Soft delete
+  isDeleted           Boolean                @default(false) @map("is_deleted")
+  deletedAt           DateTime?              @map("deleted_at")
+  deletedBy           String?                @map("deleted_by")
+
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  // Relations
+  user                User                   @relation("UserSignatures", fields: [userId], references: [id], onDelete: Cascade)
+  verifier            User?                  @relation("VerifierSignatures", fields: [verifiedBy], references: [id], onDelete: SetNull)
+  history             SignatureHistory[]
+
+  @@index([userId])
+  @@index([referenceType])
+  @@index([referenceId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([verificationStatus])
+  @@map("digital_signatures")
+}
+
+model SignatureHistory {
+  id                 String           @id @default(uuid())
+  signatureId        String           @map("signature_id")
+  action             String           // CREATED, UPLOADED, VERIFIED, FAILED, REVOKED
+  performedBy        String           @map("performed_by")
+  timestamp          DateTime         @default(now())
+  metadata           Json?
+
+  createdAt          DateTime         @default(now()) @map("created_at")
+
+  signature          DigitalSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
+
+  @@index([signatureId])
+  @@map("signature_histories")
 }

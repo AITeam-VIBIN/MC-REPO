@@ -41,6 +41,8 @@ async function main() {
   console.log('Seeded users');
 
   // 3. Seed Vaults & Folders (Clean previous structures first)
+  await prisma.signatureHistory.deleteMany();
+  await prisma.digitalSignature.deleteMany();
   await prisma.checkoutMovement.deleteMany();
   await prisma.checkout.deleteMany();
   await prisma.approvalHistory.deleteMany();
@@ -546,6 +548,122 @@ async function main() {
   });
 
   console.log('Seeded polymorphic workflow approval requests');
+
+  // 11. Seed Digital Signatures
+  // A. Checkout signature
+  const sig1 = await prisma.digitalSignature.create({
+    data: {
+      id: 's1000000-0000-0000-0000-000000000001',
+      signatureRefNumber: 'SIG-2026-0001',
+      signatureType: 'DRAWN',
+      status: 'VERIFIED',
+      userId: viewerUser.id,
+      userSnapshot: 'viewer@mitcon.com',
+      departmentSnapshot: 'Engineering',
+      referenceType: 'CHECKOUT',
+      referenceId: 'c0000000-0000-0000-0000-000000000001',
+      bucketName: 'mc-signatures',
+      storagePath: 'signatures/viewer/checkout-1.png',
+      signatureHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      originalFilename: 'drawn_sig.png',
+      mimeType: 'image/png',
+      fileSize: 2048n,
+      verificationStatus: 'VERIFIED',
+      verificationHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+      verifiedBy: adminUser.id,
+      verifiedAt: new Date(),
+      verificationMethod: 'MANUAL_AUDIT',
+    }
+  });
+
+  await prisma.signatureHistory.create({
+    data: {
+      signatureId: sig1.id,
+      action: 'CREATED',
+      performedBy: viewerUser.id,
+    }
+  });
+
+  await prisma.signatureHistory.create({
+    data: {
+      signatureId: sig1.id,
+      action: 'VERIFIED',
+      performedBy: adminUser.id,
+      metadata: { method: 'MANUAL_AUDIT' },
+    }
+  });
+
+  // B. Return signature
+  const sig2 = await prisma.digitalSignature.create({
+    data: {
+      id: 's1000000-0000-0000-0000-000000000002',
+      signatureRefNumber: 'SIG-2026-0002',
+      signatureType: 'DRAWN',
+      status: 'VERIFIED',
+      userId: viewerUser.id,
+      userSnapshot: 'viewer@mitcon.com',
+      departmentSnapshot: 'Engineering',
+      referenceType: 'RETURN',
+      referenceId: 'c0000000-0000-0000-0000-000000000004',
+      bucketName: 'mc-signatures',
+      storagePath: 'signatures/viewer/return-4.png',
+      signatureHash: 'f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08a',
+      originalFilename: 'drawn_sig_return.png',
+      mimeType: 'image/png',
+      fileSize: 1850n,
+      verificationStatus: 'VERIFIED',
+      verifiedBy: adminUser.id,
+      verifiedAt: new Date(),
+      verificationMethod: 'MANUAL_AUDIT',
+    }
+  });
+
+  await prisma.signatureHistory.create({
+    data: {
+      signatureId: sig2.id,
+      action: 'CREATED',
+      performedBy: viewerUser.id,
+    }
+  });
+
+  await prisma.signatureHistory.create({
+    data: {
+      signatureId: sig2.id,
+      action: 'VERIFIED',
+      performedBy: adminUser.id,
+    }
+  });
+
+  // C. Approval signature
+  const sig3 = await prisma.digitalSignature.create({
+    data: {
+      id: 's1000000-0000-0000-0000-000000000003',
+      signatureRefNumber: 'SIG-2026-0003',
+      signatureType: 'UPLOADED',
+      status: 'PENDING_VERIFICATION',
+      userId: adminUser.id,
+      userSnapshot: 'admin@mitcon.com',
+      departmentSnapshot: 'Legal',
+      referenceType: 'APPROVAL',
+      referenceId: 'a0000000-0000-0000-0000-000000000002',
+      bucketName: 'mc-signatures',
+      storagePath: 'signatures/admin/approval-2.jpg',
+      signatureHash: '2c26b46b68ffc68ff99b453c1d30413413422cd15d6c15b0f00a08',
+      originalFilename: 'scanned_sig.jpg',
+      mimeType: 'image/jpeg',
+      fileSize: 45000n,
+    }
+  });
+
+  await prisma.signatureHistory.create({
+    data: {
+      signatureId: sig3.id,
+      action: 'CREATED',
+      performedBy: adminUser.id,
+    }
+  });
+
+  console.log('Seeded digital signatures');
 
   console.log('Seeding finished successfully.');
 }
