@@ -16,6 +16,7 @@ import securityRouter from './routes/security.routes.js';
 import vaultRouter from './routes/vault.routes.js';
 import documentsRouter from './routes/documents.routes.js';
 import checkoutRouter from './routes/checkout.routes.js';
+import approvalRouter from './routes/approval.routes.js';
 
 const app = express();
 
@@ -66,6 +67,9 @@ app.use('/api/v1/documents', documentsRouter);
 
 // Mount Checkout router
 app.use('/api/v1/checkouts', checkoutRouter);
+
+// Mount Approval router
+app.use('/api/v1/approvals', approvalRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {

@@ -41,7 +41,10 @@ async function main() {
   console.log('Seeded users');
 
   // 3. Seed Vaults & Folders (Clean previous structures first)
+  await prisma.checkoutMovement.deleteMany();
   await prisma.checkout.deleteMany();
+  await prisma.approvalHistory.deleteMany();
+  await prisma.approvalStep.deleteMany();
   await prisma.approvalRequest.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.fileVersion.deleteMany();
@@ -186,17 +189,7 @@ async function main() {
   });
   console.log('Seeded folder permissions');
 
-  // 7. Seed Approval Requests
-  await prisma.approvalRequest.create({
-    data: {
-      documentId: doc2.id,
-      requesterId: adminUser.id,
-      approverId: adminUser.id,
-      status: 'PENDING',
-      comments: 'Requesting review on legal wording',
-    },
-  });
-  console.log('Seeded approval requests');
+  // 7. Old Seed Approval Requests placeholder removed (Seeded as polymorphic workflows in step 10)
 
   // 8. Seed Audit Logs
   await prisma.auditLog.create({
@@ -227,6 +220,7 @@ async function main() {
 
   await prisma.checkout.create({
     data: {
+      id: 'c0000000-0000-0000-0000-000000000001',
       documentId: doc1.id,
       documentVersionId: 'ver-old-1',
       documentNameSnapshot: doc1.name,
@@ -245,6 +239,7 @@ async function main() {
 
   await prisma.checkout.create({
     data: {
+      id: 'c0000000-0000-0000-0000-000000000002',
       documentId: doc1.id,
       documentVersionId: 'ver-old-1',
       documentNameSnapshot: doc1.name,
@@ -265,6 +260,7 @@ async function main() {
 
   await prisma.checkout.create({
     data: {
+      id: 'c0000000-0000-0000-0000-000000000003',
       documentId: doc1.id,
       documentVersionId: 'ver-old-1',
       documentNameSnapshot: doc1.name,
@@ -287,6 +283,7 @@ async function main() {
 
   await prisma.checkout.create({
     data: {
+      id: 'c0000000-0000-0000-0000-000000000004',
       documentId: doc1.id,
       documentVersionId: 'ver-old-1',
       documentNameSnapshot: doc1.name,
@@ -312,6 +309,243 @@ async function main() {
     },
   });
   console.log('Seeded checkout records');
+
+  // 10. Seed Polymorphic Approval Workflow Records
+  const appReq1 = await prisma.approvalRequest.create({
+    data: {
+      id: 'a0000000-0000-0000-0000-000000000001',
+      referenceType: 'CHECKOUT',
+      referenceId: 'c0000000-0000-0000-0000-000000000001',
+      title: 'Checkout Request for Arch-spec-v1.pdf',
+      description: 'Physical audit copy requested by Viewer User',
+      reason: 'Standard process verification review.',
+      requesterId: viewerUser.id,
+      requesterName: 'Viewer User',
+      requesterDepartment: 'Engineering',
+      requesterDesignation: 'Architect Specifier',
+      currentStep: 1,
+      totalSteps: 1,
+      currentApproverId: adminUser.id,
+      approvalLevel: 'ADMIN',
+      priority: 'NORMAL',
+      status: 'PENDING',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq1.id,
+      stepNumber: 1,
+      approverId: adminUser.id,
+      approverRole: 'ADMIN',
+      status: 'PENDING',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq1.id,
+      action: 'CREATED',
+      performedBy: viewerUser.id,
+      previousState: 'DRAFT',
+      newState: 'PENDING',
+      remarks: 'Draft request generated.',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq1.id,
+      action: 'SUBMITTED',
+      performedBy: viewerUser.id,
+      previousState: 'PENDING',
+      newState: 'PENDING',
+      remarks: 'Submitted for manager/admin approval.',
+    }
+  });
+
+  const appReq2 = await prisma.approvalRequest.create({
+    data: {
+      id: 'a0000000-0000-0000-0000-000000000002',
+      referenceType: 'EXTERNAL_SHARE',
+      referenceId: 'share-999',
+      title: 'External Share of NDAs',
+      description: 'Sharing standard agreement template with external partner',
+      reason: 'Partner collaboration prep.',
+      requesterId: viewerUser.id,
+      requesterName: 'Viewer User',
+      requesterDepartment: 'Engineering',
+      requesterDesignation: 'Architect Specifier',
+      currentStep: 1,
+      totalSteps: 1,
+      currentApproverId: adminUser.id,
+      approvalLevel: 'ADMIN',
+      priority: 'HIGH',
+      status: 'APPROVED',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq2.id,
+      stepNumber: 1,
+      approverId: adminUser.id,
+      approverRole: 'ADMIN',
+      status: 'APPROVED',
+      decisionDate: new Date(),
+      comments: 'Approved external transfer',
+      actionTaken: 'APPROVED',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq2.id,
+      action: 'CREATED',
+      performedBy: viewerUser.id,
+      previousState: 'DRAFT',
+      newState: 'PENDING',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq2.id,
+      action: 'APPROVED',
+      performedBy: adminUser.id,
+      previousState: 'PENDING',
+      newState: 'APPROVED',
+      remarks: 'Approved by admin.',
+    }
+  });
+
+  const appReq3 = await prisma.approvalRequest.create({
+    data: {
+      id: 'a0000000-0000-0000-0000-000000000003',
+      referenceType: 'DOCUMENT',
+      referenceId: doc2.id,
+      title: 'Classification Override Request',
+      description: 'Downgrading classification from CONFIDENTIAL to PUBLIC',
+      reason: 'Public marketing request.',
+      requesterId: viewerUser.id,
+      requesterName: 'Viewer User',
+      requesterDepartment: 'Engineering',
+      requesterDesignation: 'Architect Specifier',
+      currentStep: 1,
+      totalSteps: 1,
+      currentApproverId: adminUser.id,
+      approvalLevel: 'ADMIN',
+      priority: 'URGENT',
+      status: 'REJECTED',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq3.id,
+      stepNumber: 1,
+      approverId: adminUser.id,
+      approverRole: 'ADMIN',
+      status: 'REJECTED',
+      decisionDate: new Date(),
+      comments: 'Rejected. Violates security compliance parameters.',
+      actionTaken: 'REJECTED',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq3.id,
+      action: 'REJECTED',
+      performedBy: adminUser.id,
+      previousState: 'PENDING',
+      newState: 'REJECTED',
+      remarks: 'Violates compliance parameters.',
+    }
+  });
+
+  const appReq4 = await prisma.approvalRequest.create({
+    data: {
+      id: 'a0000000-0000-0000-0000-000000000004',
+      referenceType: 'USER_ACCESS',
+      referenceId: 'access-req-002',
+      title: 'Confidential Repository Read Privilege Request',
+      description: 'Granting read permissions to Engineering team lead',
+      reason: 'Required for technical specs design overview.',
+      requesterId: viewerUser.id,
+      requesterName: 'Viewer User',
+      requesterDepartment: 'Engineering',
+      requesterDesignation: 'Architect Specifier',
+      currentStep: 2,
+      totalSteps: 3,
+      currentApproverId: adminUser.id,
+      approvalLevel: 'ADMIN',
+      priority: 'NORMAL',
+      status: 'IN_PROGRESS',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq4.id,
+      stepNumber: 1,
+      approverId: adminUser.id,
+      approverRole: 'MANAGER',
+      status: 'APPROVED',
+      decisionDate: new Date(),
+      comments: 'Manager verification completed.',
+      actionTaken: 'APPROVED',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq4.id,
+      stepNumber: 2,
+      approverId: adminUser.id,
+      approverRole: 'ADMIN',
+      status: 'PENDING',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalStep.create({
+    data: {
+      approvalRequestId: appReq4.id,
+      stepNumber: 3,
+      approverId: adminUser.id,
+      approverRole: 'VP',
+      status: 'PENDING',
+      approverName: 'Admin User',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq4.id,
+      action: 'CREATED',
+      performedBy: viewerUser.id,
+      previousState: 'DRAFT',
+      newState: 'PENDING',
+    }
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      approvalRequestId: appReq4.id,
+      action: 'APPROVED',
+      performedBy: adminUser.id,
+      previousState: 'PENDING',
+      newState: 'IN_PROGRESS',
+      remarks: 'Step 1 approved.',
+    }
+  });
+
+  console.log('Seeded polymorphic workflow approval requests');
 
   console.log('Seeding finished successfully.');
 }

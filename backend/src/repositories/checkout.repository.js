@@ -596,6 +596,30 @@ export class CheckoutRepository {
   }
 
   /**
+   * Consolidate updating all approval fields in one call.
+   */
+  async updateApprovalResult(id, data, tx = null) {
+    const client = tx || prisma;
+    try {
+      return await client.checkout.update({
+        where: { id },
+        data: {
+          status: data.status,
+          approvalStatus: data.approvalStatus,
+          approvalId: data.approvalId,
+          approvedById: data.approvedById,
+          approvedAt: data.approvedAt ? new Date(data.approvedAt) : null,
+          rejectionReason: data.rejectionReason || null,
+          approvalComments: data.approvalComments || null,
+        },
+        include: this._defaultIncludes,
+      });
+    } catch (err) {
+      handlePrismaError(err, 'updateApprovalResult');
+    }
+  }
+
+  /**
    * Update approval status on checkout.
    */
   async updateApprovalStatus(id, approvalStatus, tx = null) {

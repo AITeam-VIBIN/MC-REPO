@@ -11,6 +11,9 @@ export async function cleanupDb() {
   try {
     await prisma.checkoutMovement.deleteMany({});
     await prisma.checkout.deleteMany({});
+    await prisma.approvalHistory.deleteMany({});
+    await prisma.approvalStep.deleteMany({});
+    await prisma.approvalRequest.deleteMany({});
     await prisma.fileVersion.deleteMany({});
     await prisma.document.deleteMany({});
     await prisma.folderPermission.deleteMany({});

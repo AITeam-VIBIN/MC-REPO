@@ -36,9 +36,29 @@ enum StorageProvider {
 }
 
 enum ApprovalStatus {
+  DRAFT
   PENDING
+  IN_PROGRESS
   APPROVED
   REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ApprovalAction {
+  CREATED
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REASSIGNED
+  CANCELLED
+}
+
+enum ApprovalReferenceType {
+  CHECKOUT
+  DOCUMENT
+  USER_ACCESS
+  EXTERNAL_SHARE
 }
 
 enum VaultType {
@@ -85,8 +105,9 @@ model User {
   folders           Folder[]
   ownedVaults       Vault[]           @relation("VaultOwner")
   folderPermissions FolderPermission[]
-  requestedApprovals ApprovalRequest[] @relation("RequestedApprovals")
-  approvedApprovals  ApprovalRequest[] @relation("ApprovedApprovals")
+  approvalRequestsCreated  ApprovalRequest[] @relation("ApprovalRequestsCreated")
+  approvalRequestsAssigned ApprovalRequest[] @relation("ApprovalRequestsAssigned")
+  approvalStepsAssigned    ApprovalStep[]
   auditLogs         AuditLog[]
   sessions          Session[]
   requestedCheckouts Checkout[] @relation("RequestedCheckouts")
@@ -241,7 +262,6 @@ model Document {
   department       Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   versions         FileVersion[]
   auditLogs        AuditLog[]
-  approvalRequests ApprovalRequest[]
   checkouts        Checkout[]
 
   @@map("documents")
@@ -263,21 +283,92 @@ model FileVersion {
 }
 
 model ApprovalRequest {
-  id          String         @id @default(uuid())
-  documentId  String         @map("document_id")
-  requesterId String         @map("requester_id")
-  approverId  String?        @map("approver_id")
-  status      ApprovalStatus @default(PENDING)
-  comments    String?
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  id                  String                @id @default(uuid())
+  referenceType       ApprovalReferenceType @map("reference_type")
+  referenceId         String                @map("reference_id")
+  title               String
+  description         String?
+  reason              String?
 
-  // Relationships
-  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  requester   User           @relation("RequestedApprovals", fields: [requesterId], references: [id], onDelete: Cascade)
-  approver    User?          @relation("ApprovedApprovals", fields: [approverId], references: [id], onDelete: SetNull)
+  // Requester snapshot fields
+  requesterId         String                @map("requester_id")
+  requestedAt         DateTime              @default(now()) @map("requested_at")
+  requesterName       String?               @map("requester_name")
+  requesterDepartment  String?               @map("requester_department")
+  requesterDesignation String?               @map("requester_designation")
 
+  // Workflow parameters
+  currentStep         Int                   @default(1) @map("current_step")
+  totalSteps          Int                   @default(1) @map("total_steps")
+  currentApproverId   String?               @map("current_approver_id")
+  approvalLevel       String?               @map("approval_level")
+  priority            String                @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+
+  status              ApprovalStatus        @default(DRAFT)
+
+  // Soft delete
+  isDeleted           Boolean               @default(false) @map("is_deleted")
+  deletedAt           DateTime?             @map("deleted_at")
+  deletedBy           String?               @map("deleted_by")
+
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  // Relations
+  requester           User                  @relation("ApprovalRequestsCreated", fields: [requesterId], references: [id], onDelete: Cascade)
+  currentApprover     User?                 @relation("ApprovalRequestsAssigned", fields: [currentApproverId], references: [id], onDelete: SetNull)
+  steps               ApprovalStep[]
+  history             ApprovalHistory[]
+
+  @@index([referenceType])
+  @@index([referenceId])
+  @@index([status])
+  @@index([requesterId])
+  @@index([currentApproverId])
+  @@index([createdAt])
+  @@index([priority])
   @@map("approval_requests")
+}
+
+model ApprovalStep {
+  id                String         @id @default(uuid())
+  approvalRequestId String         @map("approval_request_id")
+  stepNumber        Int            @map("step_number")
+  approverId        String         @map("approver_id")
+  approverRole      String?        @map("approver_role")
+  status            ApprovalStatus @default(PENDING)
+  decisionDate      DateTime?      @map("decision_date")
+  comments          String?
+  actionTaken       String?        @map("action_taken")
+  approverName      String?        @map("approver_name")
+
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  approvalRequest   ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  approver          User           @relation(fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([approvalRequestId])
+  @@index([approverId])
+  @@map("approval_steps")
+}
+
+model ApprovalHistory {
+  id                String         @id @default(uuid())
+  approvalRequestId String         @map("approval_request_id")
+  action            ApprovalAction
+  performedBy       String         @map("performed_by")
+  timestamp         DateTime       @default(now())
+  previousState     ApprovalStatus @map("previous_state")
+  newState          ApprovalStatus @map("new_state")
+  remarks           String?
+
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  approvalRequest   ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  @@index([approvalRequestId])
+  @@map("approval_histories")
 }
 
 model AuditLog {

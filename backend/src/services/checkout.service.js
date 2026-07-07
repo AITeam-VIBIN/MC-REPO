@@ -268,13 +268,13 @@ export class CheckoutService {
     }
 
     // Update in repository
-    const updated = await prisma.$transaction(async (tx) => {
-      await this.checkoutRepo.updateStatus(id, 'APPROVED', tx);
-      await this.checkoutRepo.updateApprovalStatus(id, 'APPROVED', tx);
-      await this.checkoutRepo.storeApprovalReference(id, approvalIdReference, tx);
-      await this.checkoutRepo.updateApprovedBy(id, approverId, tx);
-      await this.checkoutRepo.updateApprovedTimestamp(id, new Date(), tx);
-      return await this.checkoutRepo.storeApprovalComments(id, comments, tx);
+    const updated = await this.checkoutRepo.updateApprovalResult(id, {
+      status: 'APPROVED',
+      approvalStatus: 'APPROVED',
+      approvalId: approvalIdReference,
+      approvedById: approverId,
+      approvedAt: new Date(),
+      approvalComments: comments,
     });
 
     // Trigger hook
@@ -304,14 +304,14 @@ export class CheckoutService {
     }
 
     // Update in repository
-    const updated = await prisma.$transaction(async (tx) => {
-      await this.checkoutRepo.updateStatus(id, 'REJECTED', tx);
-      await this.checkoutRepo.updateApprovalStatus(id, 'REJECTED', tx);
-      await this.checkoutRepo.storeApprovalReference(id, approvalIdReference, tx);
-      await this.checkoutRepo.updateApprovedBy(id, approverId, tx);
-      await this.checkoutRepo.updateApprovedTimestamp(id, new Date(), tx);
-      await this.checkoutRepo.storeRejectionReason(id, rejectionReason, tx);
-      return await this.checkoutRepo.storeApprovalComments(id, comments, tx);
+    const updated = await this.checkoutRepo.updateApprovalResult(id, {
+      status: 'REJECTED',
+      approvalStatus: 'REJECTED',
+      approvalId: approvalIdReference,
+      approvedById: approverId,
+      approvedAt: new Date(),
+      rejectionReason,
+      approvalComments: comments,
     });
 
     // Trigger hook
@@ -334,16 +334,16 @@ export class CheckoutService {
     } else if (approvalStatus === 'REJECTED') {
       return await this.processApprovalRejection(id, metadata.approverId, metadata.rejectionReason, metadata.comments, metadata.approvalId);
     } else if (approvalStatus === 'EXPIRED') {
-      const updated = await prisma.$transaction(async (tx) => {
-        await this.checkoutRepo.updateStatus(id, 'CLOSED', tx);
-        return await this.checkoutRepo.updateApprovalStatus(id, 'EXPIRED', tx);
+      const updated = await this.checkoutRepo.updateApprovalResult(id, {
+        status: 'CLOSED',
+        approvalStatus: 'EXPIRED',
       });
       await approvalExpired(updated, metadata);
       return updated;
     } else if (approvalStatus === 'CANCELLED') {
-      const updated = await prisma.$transaction(async (tx) => {
-        await this.checkoutRepo.updateStatus(id, 'CANCELLED', tx);
-        return await this.checkoutRepo.updateApprovalStatus(id, 'CANCELLED', tx);
+      const updated = await this.checkoutRepo.updateApprovalResult(id, {
+        status: 'CANCELLED',
+        approvalStatus: 'CANCELLED',
       });
       await approvalCancelled(updated, metadata);
       return updated;
