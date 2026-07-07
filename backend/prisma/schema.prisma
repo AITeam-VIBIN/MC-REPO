@@ -89,6 +89,8 @@ model User {
   approvedApprovals  ApprovalRequest[] @relation("ApprovedApprovals")
   auditLogs         AuditLog[]
   sessions          Session[]
+  requestedCheckouts Checkout[] @relation("RequestedCheckouts")
+  approvedCheckouts  Checkout[] @relation("ApprovedCheckouts")
 
   @@map("users")
 }
@@ -240,6 +242,7 @@ model Document {
   versions         FileVersion[]
   auditLogs        AuditLog[]
   approvalRequests ApprovalRequest[]
+  checkouts        Checkout[]
 
   @@map("documents")
 }
@@ -282,6 +285,7 @@ model AuditLog {
   action     String
   userId     String?  @map("user_id")
   documentId String?  @map("document_id")
+  checkoutId String?  @map("checkout_id")
   ipAddress  String?  @map("ip_address")
   userAgent  String?  @map("user_agent")
   payload    Json?
@@ -290,6 +294,139 @@ model AuditLog {
   // Relationships
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  checkout   Checkout? @relation(fields: [checkoutId], references: [id], onDelete: SetNull)
 
   @@map("audit_logs")
+}
+
+enum CheckoutStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CHECKED_OUT
+  PENDING_RETURN
+  RETURNED
+  CLOSED
+  CANCELLED
+}
+
+enum ReturnCondition {
+  GOOD
+  DAMAGED
+  MISSING
+  NEEDS_REVIEW
+}
+
+model Checkout {
+  id                    String                 @id @default(uuid())
+  documentId            String                 @map("document_id")
+  documentVersionId     String?                @map("document_version_id")
+  documentNameSnapshot  String                 @map("document_name_snapshot")
+  classificationSnapshot DocumentClassification @map("classification_snapshot")
+
+  requestedById         String                 @map("requested_by_id")
+  employeeId            String?                @map("employee_id")
+  employeeName          String                 @map("employee_name")
+  department            String                 // Snapshot department name
+  designation           String?
+
+  checkoutDate          DateTime               @default(now()) @map("checkout_date")
+  destination           String
+  locationAddress       String                 @map("location_address")
+  externalOrganizationName String?            @map("external_organization_name")
+  purposeOfRemoval      String                 @map("purpose_of_removal")
+  expectedReturnDate    DateTime?              @map("expected_return_date")
+
+  status                CheckoutStatus         @default(DRAFT)
+  approvedById          String?                @map("approved_by_id")
+  approvedAt            DateTime?              @map("approved_at")
+  rejectionReason       String?                @map("rejection_reason")
+
+  approvalId            String?                @map("approval_id")
+  approvalComments      String?                @map("approval_comments")
+  approvalStatus        String?                @map("approval_status")
+  currentLocation       String?                @map("current_location")
+
+  returnStatus          String?                @map("return_status")
+  returnedDate          DateTime?              @map("returned_date")
+  returnedTo            String?                @map("returned_to")
+  conditionOnReturn     ReturnCondition?       @map("condition_on_return")
+  returnNotes           String?                @map("return_notes")
+
+  checkoutSignatureId   String?                @map("checkout_signature_id")
+  returnSignatureId     String?                @map("return_signature_id")
+
+  isDeleted             Boolean                @default(false) @map("is_deleted")
+  deletedAt             DateTime?              @map("deleted_at")
+  deletedById           String?                @map("deleted_by_id")
+
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  // Relationships
+  document              Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy           User                   @relation("RequestedCheckouts", fields: [requestedById], references: [id], onDelete: Cascade)
+  approvedBy            User?                  @relation("ApprovedCheckouts", fields: [approvedById], references: [id], onDelete: SetNull)
+  auditLogs             AuditLog[]
+  movements             CheckoutMovement[]
+
+  @@index([documentId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([checkoutDate])
+  @@index([expectedReturnDate])
+  @@index([department])
+  @@map("checkouts")
+}
+
+enum MovementStatus {
+  CREATED
+  APPROVED_FOR_RELEASE
+  CHECKED_OUT
+  LEFT_OFFICE
+  IN_TRANSIT
+  DELIVERED
+  WITH_EXTERNAL_PARTY
+  RETURN_INITIATED
+  RETURN_IN_TRANSIT
+  RETURN_RECEIVED
+  COMPLETED
+}
+
+model CheckoutMovement {
+  id                 String         @id @default(uuid())
+  checkoutId         String         @map("checkout_id")
+  documentId         String         @map("document_id")
+  versionId          String?        @map("version_id")
+
+  // Movement details
+  currentLocation    String         @map("current_location")
+  previousLocation   String?        @map("previous_location")
+  destinationAddress String?        @map("destination_address")
+  externalOrganization String?      @map("external_organization")
+  status             MovementStatus @default(CREATED)
+  movementDate       DateTime       @map("movement_date")
+  movementTime       String?        @map("movement_time")
+  remarks            String?
+
+  // Handler / Responsible Person
+  handlerName        String         @map("handler_name")
+  employeeId         String?        @map("employee_id")
+  contactReference   String?        @map("contact_reference")
+  department         String?        @map("department")
+
+  // QR scan prep fields
+  trackingReference  String?        @map("tracking_reference")
+  qrIdentifier       String?        @map("qr_identifier")
+  scanTimestamp      DateTime?      @map("scan_timestamp")
+  scanLocation       String?        @map("scan_location")
+
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  checkout           Checkout       @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@index([checkoutId])
+  @@map("checkout_movements")
 }

@@ -41,6 +41,7 @@ async function main() {
   console.log('Seeded users');
 
   // 3. Seed Vaults & Folders (Clean previous structures first)
+  await prisma.checkout.deleteMany();
   await prisma.approvalRequest.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.fileVersion.deleteMany();
@@ -219,6 +220,98 @@ async function main() {
     },
   });
   console.log('Seeded audit logs');
+
+  // 9. Seed Checkouts
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+  await prisma.checkout.create({
+    data: {
+      documentId: doc1.id,
+      documentVersionId: 'ver-old-1',
+      documentNameSnapshot: doc1.name,
+      classificationSnapshot: doc1.classification,
+      requestedById: viewerUser.id,
+      employeeId: 'EMP-Viewer',
+      employeeName: 'Viewer User',
+      department: 'Engineering',
+      designation: 'Architect Specifier',
+      destination: 'MITCON Client Site A',
+      locationAddress: '123 Main St, Tokyo, Japan',
+      purposeOfRemoval: 'On-site client architecture review.',
+      status: 'PENDING_APPROVAL',
+    },
+  });
+
+  await prisma.checkout.create({
+    data: {
+      documentId: doc1.id,
+      documentVersionId: 'ver-old-1',
+      documentNameSnapshot: doc1.name,
+      classificationSnapshot: doc1.classification,
+      requestedById: viewerUser.id,
+      employeeId: 'EMP-Viewer',
+      employeeName: 'Viewer User',
+      department: 'Engineering',
+      designation: 'Architect Specifier',
+      destination: 'MITCON Client Site A',
+      locationAddress: '123 Main St, Tokyo, Japan',
+      purposeOfRemoval: 'On-site client architecture review.',
+      status: 'APPROVED',
+      approvedById: adminUser.id,
+      approvedAt: new Date(),
+    },
+  });
+
+  await prisma.checkout.create({
+    data: {
+      documentId: doc1.id,
+      documentVersionId: 'ver-old-1',
+      documentNameSnapshot: doc1.name,
+      classificationSnapshot: doc1.classification,
+      requestedById: viewerUser.id,
+      employeeId: 'EMP-Viewer',
+      employeeName: 'Viewer User',
+      department: 'Engineering',
+      designation: 'Architect Specifier',
+      destination: 'MITCON Client Site A',
+      locationAddress: '123 Main St, Tokyo, Japan',
+      purposeOfRemoval: 'On-site client architecture review.',
+      status: 'CHECKED_OUT',
+      approvedById: adminUser.id,
+      approvedAt: new Date(),
+      checkoutDate: new Date(),
+      expectedReturnDate: sevenDaysFromNow,
+    },
+  });
+
+  await prisma.checkout.create({
+    data: {
+      documentId: doc1.id,
+      documentVersionId: 'ver-old-1',
+      documentNameSnapshot: doc1.name,
+      classificationSnapshot: doc1.classification,
+      requestedById: viewerUser.id,
+      employeeId: 'EMP-Viewer',
+      employeeName: 'Viewer User',
+      department: 'Engineering',
+      designation: 'Architect Specifier',
+      destination: 'MITCON Client Site A',
+      locationAddress: '123 Main St, Tokyo, Japan',
+      purposeOfRemoval: 'On-site client architecture review.',
+      status: 'RETURNED',
+      approvedById: adminUser.id,
+      approvedAt: new Date(),
+      checkoutDate: new Date(),
+      expectedReturnDate: sevenDaysFromNow,
+      returnStatus: 'Returned and verified',
+      returnedDate: new Date(),
+      returnedTo: 'admin@mitcon.com',
+      conditionOnReturn: 'GOOD',
+      returnNotes: 'Returned in perfect physical condition.',
+    },
+  });
+  console.log('Seeded checkout records');
 
   console.log('Seeding finished successfully.');
 }

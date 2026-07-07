@@ -15,11 +15,15 @@ const documentsController = new DocumentsController();
 // Validation Middleware
 const validate = (schema) => (req, res, next) => {
   try {
-    schema.parse({
-      body: req.body,
-      query: req.query,
-      params: req.params,
-    });
+    if (schema === idParamSchema) {
+      schema.parse(req.params);
+    } else {
+      schema.parse({
+        body: req.body,
+        query: req.query,
+        params: req.params,
+      });
+    }
     next();
   } catch (error) {
     next(error);
