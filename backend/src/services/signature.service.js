@@ -378,14 +378,15 @@ export class SignatureService {
     let success = true;
     let reason = '';
 
-    const ownerValid = await this.validateSignatureOwner(signature);
+    const [ownerValid, txValid] = await Promise.all([
+      this.validateSignatureOwner(signature),
+      this.validateTransactionBinding(signature)
+    ]);
+
     if (!ownerValid) {
       success = false;
       reason = 'Ownership validation failed: user not authorized for transaction.';
-    }
-
-    const txValid = await this.validateTransactionBinding(signature);
-    if (success && !txValid) {
+    } else if (!txValid) {
       success = false;
       reason = 'Transaction validation failed: target transaction is inactive or not found.';
     }
