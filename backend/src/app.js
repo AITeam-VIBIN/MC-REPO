@@ -11,6 +11,7 @@ import {
   apiLimiter,
   errorLogger
 } from './middleware/index.js';
+import { auditMiddleware } from './middleware/audit.middleware.js';
 import authRouter from './auth/auth.routes.js';
 import securityRouter from './routes/security.routes.js';
 import vaultRouter from './routes/vault.routes.js';
@@ -18,6 +19,7 @@ import documentsRouter from './routes/documents.routes.js';
 import checkoutRouter from './routes/checkout.routes.js';
 import approvalRouter from './routes/approval.routes.js';
 import signatureRouter from './routes/signature.routes.js';
+import auditRouter from './routes/audit.routes.js';
 
 const app = express();
 
@@ -50,6 +52,9 @@ app.use(compressionMiddleware);
 // Global API rate limiting
 app.use(apiLimiter);
 
+// Centralized automatic audit request capture middleware
+app.use(auditMiddleware);
+
 // ==========================================
 // 2. Routes Routing Mounts
 // ==========================================
@@ -74,6 +79,9 @@ app.use('/api/v1/approvals', approvalRouter);
 
 // Mount Signature router
 app.use('/api/v1/signatures', signatureRouter);
+
+// Mount Audit router
+app.use('/api/v1/audit', auditRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {

@@ -107,6 +107,38 @@ enum FolderPermissionType {
   ADMIN
 }
 
+enum AuditCategory {
+  AUTHENTICATION
+  DOCUMENT
+  CHECKOUT
+  APPROVAL
+  SIGNATURE
+  USER_MANAGEMENT
+  SYSTEM
+  SECURITY
+}
+
+enum AuditAction {
+  CREATE
+  VIEW
+  UPDATE
+  DELETE
+  DOWNLOAD
+  UPLOAD
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  VERIFY
+  EXPORT
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILED
+  DENIED
+}
+
 // =========================================================================
 // Models
 // =========================================================================
@@ -284,7 +316,6 @@ model Document {
   vault            Vault?                 @relation(fields: [vaultId], references: [id], onDelete: SetNull)
   department       Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   versions         FileVersion[]
-  auditLogs        AuditLog[]
   checkouts        Checkout[]
 
   @@map("documents")
@@ -395,21 +426,69 @@ model ApprovalHistory {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  action     String
-  userId     String?  @map("user_id")
-  documentId String?  @map("document_id")
-  checkoutId String?  @map("checkout_id")
-  ipAddress  String?  @map("ip_address")
-  userAgent  String?  @map("user_agent")
-  payload    Json?
-  createdAt  DateTime @default(now()) @map("created_at")
+  id                 String        @id @default(uuid())
+  eventRef           String        @unique @map("event_ref")
+  
+  // Identity snapshot
+  userId             String?       @map("user_id")
+  userSnapshot       Json?         @map("user_snapshot")
+  roleSnapshot       String?       @map("role_snapshot")
+  departmentSnapshot String?       @map("department_snapshot")
+
+  // Event information
+  eventType          String        @map("event_type")
+  category           AuditCategory
+  action             AuditAction
+  description        String?
+
+  // Resource binding
+  referenceType      String?       @map("reference_type")
+  referenceId        String?       @map("reference_id")
+
+  // Change tracking
+  previousState      Json?         @map("previous_state")
+  newState           Json?         @map("new_state")
+
+  // Request context
+  ipAddress          String?       @map("ip_address")
+  userAgent          String?       @map("user_agent")
+  device             String?
+  browser            String?
+  os                 String?
+  sessionId          String?       @map("session_id")
+
+  // Security context
+  authMethod         String?       @map("auth_method")
+  mfaStatus          String?       @map("mfa_status")
+  permissionUsed     String?       @map("permission_used")
+  result             AuditResult
+
+  // Metadata
+  metadata           Json?
+
+  // Integrity protection
+  recordHash         String?       @map("record_hash")
+  prevRecordHash     String?       @map("prev_record_hash")
+  sequenceNumber     Int           @default(autoincrement()) @map("sequence_number")
+
+  // Retention support
+  retentionPeriod    Int?          @map("retention_period")
+  archiveStatus      String?       @default("ACTIVE") @map("archive_status")
+  archivedAt         DateTime?     @map("archived_at")
+
+  createdAt          DateTime      @default(now()) @map("created_at")
 
   // Relationships
-  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  checkout   Checkout? @relation(fields: [checkoutId], references: [id], onDelete: SetNull)
+  user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([eventType])
+  @@index([category])
+  @@index([action])
+  @@index([createdAt])
+  @@index([referenceType])
+  @@index([referenceId])
+  @@index([result])
   @@map("audit_logs")
 }
 
@@ -482,7 +561,6 @@ model Checkout {
   document              Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
   requestedBy           User                   @relation("RequestedCheckouts", fields: [requestedById], references: [id], onDelete: Cascade)
   approvedBy            User?                  @relation("ApprovedCheckouts", fields: [approvedById], references: [id], onDelete: SetNull)
-  auditLogs             AuditLog[]
   movements             CheckoutMovement[]
 
   @@index([documentId])

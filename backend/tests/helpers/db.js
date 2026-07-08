@@ -9,6 +9,7 @@ import { prisma } from '../../src/config/database.js';
  */
 export async function cleanupDb() {
   try {
+    await prisma.auditLog.deleteMany({});
     await prisma.signatureHistory.deleteMany({});
     await prisma.digitalSignature.deleteMany({});
     await prisma.checkoutMovement.deleteMany({});

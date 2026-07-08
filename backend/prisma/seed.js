@@ -194,26 +194,179 @@ async function main() {
   // 7. Old Seed Approval Requests placeholder removed (Seeded as polymorphic workflows in step 10)
 
   // 8. Seed Audit Logs
+  // Authentication: Successful login
   await prisma.auditLog.create({
     data: {
-      action: 'DOCUMENT_UPLOADED',
+      eventRef: 'AUDIT-AUTH-SUCCESS-001',
       userId: viewerUser.id,
-      documentId: doc1.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      roleSnapshot: viewerUser.role,
+      departmentSnapshot: 'Engineering',
+      eventType: 'LOGIN_SUCCESS',
+      category: 'AUTHENTICATION',
+      action: 'LOGIN',
+      description: 'User logged in successfully',
       ipAddress: '127.0.0.1',
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      payload: { action: 'upload', size: 4589201 },
+      device: 'Desktop',
+      browser: 'Chrome',
+      os: 'Windows',
+      sessionId: 'session-uuid-001',
+      authMethod: 'PASSWORD',
+      mfaStatus: 'DISABLED',
+      result: 'SUCCESS',
+      metadata: { browser: 'Chrome', device: 'Desktop' },
     },
   });
+
+  // Authentication: Failed login
   await prisma.auditLog.create({
     data: {
-      action: 'DOCUMENT_LOCKED',
-      userId: adminUser.id,
-      documentId: doc2.id,
+      eventRef: 'AUDIT-AUTH-FAILED-002',
+      userId: null,
+      eventType: 'LOGIN_FAILED',
+      category: 'AUTHENTICATION',
+      action: 'LOGIN',
+      description: 'Login failed due to invalid credentials',
       ipAddress: '192.168.1.1',
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
-      payload: { action: 'lock' },
+      device: 'Laptop',
+      browser: 'Safari',
+      os: 'macOS',
+      authMethod: 'PASSWORD',
+      result: 'FAILED',
+      metadata: { attemptedEmail: 'unknown@example.com' },
     },
   });
+
+  // Document: Upload
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-DOC-UPLOAD-003',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      roleSnapshot: adminUser.role,
+      departmentSnapshot: 'Administration',
+      eventType: 'DOCUMENT_UPLOADED',
+      category: 'DOCUMENT',
+      action: 'UPLOAD',
+      description: `Document uploaded: ${doc1.name}`,
+      referenceType: 'DOCUMENT',
+      referenceId: doc1.id,
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      result: 'SUCCESS',
+      metadata: { filename: doc1.name, size: doc1.fileSize.toString(), classification: doc1.classification },
+    },
+  });
+
+  // Document: Download
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-DOC-DOWNLOAD-004',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      roleSnapshot: viewerUser.role,
+      departmentSnapshot: 'Engineering',
+      eventType: 'DOCUMENT_DOWNLOADED',
+      category: 'DOCUMENT',
+      action: 'DOWNLOAD',
+      description: `Document downloaded: ${doc2.name}`,
+      referenceType: 'DOCUMENT',
+      referenceId: doc2.id,
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      result: 'SUCCESS',
+      metadata: { filename: doc2.name, classification: doc2.classification },
+    },
+  });
+
+  // Checkout: Created (Pending Approval)
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-CHECKOUT-CREATE-005',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      roleSnapshot: viewerUser.role,
+      departmentSnapshot: 'Engineering',
+      eventType: 'CHECKOUT_CREATED',
+      category: 'CHECKOUT',
+      action: 'CREATE',
+      description: 'Checkout request created for document',
+      referenceType: 'CHECKOUT',
+      referenceId: 'c0000000-0000-0000-0000-000000000001',
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      result: 'SUCCESS',
+      metadata: { documentId: doc1.id, purpose: 'On-site client architecture review.' },
+    },
+  });
+
+  // Checkout: Returned
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-CHECKOUT-RETURN-006',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      roleSnapshot: viewerUser.role,
+      departmentSnapshot: 'Engineering',
+      eventType: 'CHECKOUT_RETURNED',
+      category: 'CHECKOUT',
+      action: 'UPDATE',
+      description: 'Checkout document returned and completed',
+      referenceType: 'CHECKOUT',
+      referenceId: 'c0000000-0000-0000-0000-000000000004',
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      previousState: { status: 'CHECKED_OUT' },
+      newState: { status: 'RETURNED' },
+      result: 'SUCCESS',
+      metadata: { returnedTo: 'admin@mitcon.com', condition: 'GOOD' },
+    },
+  });
+
+  // Approval: Approved
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-APPROVAL-APPROVE-007',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      roleSnapshot: adminUser.role,
+      departmentSnapshot: 'Administration',
+      eventType: 'APPROVAL_GRANTED',
+      category: 'APPROVAL',
+      action: 'APPROVE',
+      description: 'External share request approved',
+      referenceType: 'APPROVAL',
+      referenceId: 'a0000000-0000-0000-0000-000000000002',
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      result: 'SUCCESS',
+      metadata: { comments: 'Approved external transfer' },
+    },
+  });
+
+  // Signature: Verified
+  await prisma.auditLog.create({
+    data: {
+      eventRef: 'AUDIT-SIGNATURE-VERIFY-008',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      roleSnapshot: adminUser.role,
+      departmentSnapshot: 'Administration',
+      eventType: 'SIGNATURE_VERIFIED',
+      category: 'SIGNATURE',
+      action: 'VERIFY',
+      description: 'Drawn signature verified successfully',
+      referenceType: 'SIGNATURE',
+      referenceId: 's1000000-0000-0000-0000-000000000001',
+      ipAddress: '127.0.0.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      result: 'SUCCESS',
+      metadata: { verificationMethod: 'MANUAL_AUDIT' },
+    },
+  });
+
   console.log('Seeded audit logs');
 
   // 9. Seed Checkouts
