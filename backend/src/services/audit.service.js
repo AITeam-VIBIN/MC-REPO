@@ -519,8 +519,9 @@ export class AuditService {
         };
 
         const calculated = auditUtil.generateAuditHash(hashPayload, prevHash);
+        const actualPrevHash = log.prevRecordHash || '';
 
-        if (log.prevRecordHash !== prevHash) {
+        if (actualPrevHash !== prevHash) {
           anomalies.push({
             id: log.id,
             eventRef: log.eventRef,

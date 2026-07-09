@@ -167,6 +167,10 @@ model User {
   approvedCheckouts  Checkout[] @relation("ApprovedCheckouts")
   signatures         DigitalSignature[] @relation("UserSignatures")
   verifiedSignatures DigitalSignature[] @relation("VerifierSignatures")
+  notifications      Notification[]
+  notificationPreference NotificationPreference? @relation("UserNotificationPreferences")
+  reports           Report[]          @relation("UserReports")
+  scheduledReports  ScheduledReport[] @relation("UserScheduledReports")
 
   @@map("users")
 }
@@ -706,4 +710,213 @@ model SignatureHistory {
 
   @@index([signatureId])
   @@map("signature_histories")
+}
+
+enum NotificationCategory {
+  DOCUMENT
+  CHECKOUT
+  APPROVAL
+  SIGNATURE
+  SECURITY
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  REAL_TIME
+}
+
+enum NotificationStatus {
+  PENDING
+  DELIVERED
+  READ
+  FAILED
+  ARCHIVED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model Notification {
+  id                 String               @id @default(uuid())
+  refNumber          String               @unique @map("ref_number")
+  userId             String               @map("user_id")
+  userSnapshot       Json?                @map("user_snapshot")
+  departmentSnapshot String?              @map("department_snapshot")
+  title              String
+  message            String
+  description        String?
+  category           NotificationCategory
+  priority           NotificationPriority @default(NORMAL)
+  referenceType      String?              @map("reference_type")
+  referenceId        String?              @map("reference_id")
+  status             NotificationStatus   @default(PENDING)
+  expiryDate         DateTime?            @map("expiry_date")
+  archivedAt         DateTime?            @map("archived_at")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  // Relationships
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries         NotificationDelivery[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@index([priority])
+  @@index([referenceType, referenceId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id                 String              @id @default(uuid())
+  notificationId     String              @map("notification_id")
+  channel            NotificationChannel
+  status             NotificationStatus  @default(PENDING)
+  attemptCount       Int                 @default(0) @map("attempt_count")
+  deliveredAt        DateTime?           @map("delivered_at")
+  failedReason       String?             @map("failed_reason")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  // Relationships
+  notification       Notification        @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  emailEnabled       Boolean   @default(true) @map("email_enabled")
+  inAppEnabled       Boolean   @default(true) @map("in_app_enabled")
+  realTimeEnabled    Boolean   @default(true) @map("real_time_enabled")
+  categoryPreferences Json?     @map("category_preferences")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relationships
+  user               User      @relation("UserNotificationPreferences", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+enum ReportType {
+  DOCUMENT_ACTIVITY
+  CHECKOUT_REPORT
+  RETURN_REPORT
+  APPROVAL_REPORT
+  SIGNATURE_REPORT
+  AUDIT_REPORT
+  USER_ACTIVITY
+  SECURITY_REPORT
+  COMPLIANCE_REPORT
+  SYSTEM_REPORT
+}
+
+enum ReportFormat {
+  PDF
+  EXCEL
+  CSV
+}
+
+enum ReportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  EXPIRED
+  ARCHIVED
+}
+
+model Report {
+  id                 String        @id @default(uuid())
+  refNumber          String        @unique @map("ref_number")
+  name               String
+  type               ReportType
+  description        String?
+  format             ReportFormat
+  status             ReportStatus  @default(QUEUED)
+  userId             String?       @map("user_id")
+  userSnapshot       Json?         @map("user_snapshot")
+  departmentSnapshot String?       @map("department_snapshot")
+  filters            Json?
+  sorting            Json?
+  columns            Json?
+  storageProvider    String?       @map("storage_provider")
+  bucketName         String?       @map("bucket_name")
+  filePath           String?       @map("file_path")
+  fileName           String?       @map("file_name")
+  fileSize           BigInt?       @map("file_size")
+  fileHash           String?       @map("file_hash")
+  generatedAt        DateTime?     @map("generated_at")
+  expiryDate         DateTime?     @map("expiry_date")
+  startedAt          DateTime?     @map("started_at")
+  completedAt        DateTime?     @map("completed_at")
+  processingTime     Int?          @map("processing_time")
+  failureReason      String?       @map("failure_reason")
+  retryCount         Int           @default(0) @map("retry_count")
+  autoArchive        Boolean       @default(false) @map("auto_archive")
+  retentionPeriod    Int?          @map("retention_period")
+  scheduledReportId  String?       @map("scheduled_report_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  user               User?            @relation("UserReports", fields: [userId], references: [id], onDelete: SetNull)
+  scheduledReport    ScheduledReport? @relation(fields: [scheduledReportId], references: [id], onDelete: SetNull)
+  history            ReportHistory[]
+
+  @@index([type])
+  @@index([status])
+  @@index([userId])
+  @@index([departmentSnapshot])
+  @@index([createdAt])
+  @@index([generatedAt])
+  @@map("reports")
+}
+
+model ReportHistory {
+  id          String   @id @default(uuid())
+  reportId    String   @map("report_id")
+  action      String
+  performedBy String   @map("performed_by")
+  timestamp   DateTime @default(now())
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("report_histories")
+}
+
+model ScheduledReport {
+  id                String       @id @default(uuid())
+  name              String
+  reportType        ReportType   @map("report_type")
+  format            ReportFormat
+  frequency         String
+  recipients        String[]     @default([])
+  filters           Json?
+  sorting           Json?
+  columns           Json?
+  nextExecutionTime DateTime?    @map("next_execution_time")
+  isActive          Boolean      @default(true) @map("is_active")
+  ownerId           String       @map("owner_id")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  owner             User         @relation("UserScheduledReports", fields: [ownerId], references: [id], onDelete: Cascade)
+  reports           Report[]
+
+  @@map("scheduled_reports")
 }

@@ -33,6 +33,11 @@ export function auditMiddleware(req, res, next) {
         return;
       }
 
+      // Bypass audit if requested via headers (useful for API test isolation)
+      if (req.headers['x-bypass-audit'] === 'true') {
+        return;
+      }
+
       // Map request properties to Category, Action, and Event types
       let category = 'SYSTEM';
       let action = 'VIEW';

@@ -269,8 +269,8 @@ export class AuditRepository {
     if (filters.role) {
       where.roleSnapshot = { contains: filters.role, mode: 'insensitive' };
     }
-    if (filters.department) {
-      where.departmentSnapshot = { contains: filters.department, mode: 'insensitive' };
+    if (filters.department || filters.departmentSnapshot) {
+      where.departmentSnapshot = { contains: filters.department || filters.departmentSnapshot, mode: 'insensitive' };
     }
 
     // Date range filter

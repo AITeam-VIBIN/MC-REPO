@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import { shutdownQueuesAndWorkers } from './jobs/index.js';
 import redis from './config/redis.js';
+import { initSocketServer, getIO } from './config/socket.js';
 
 // Load environmental parameters
 dotenv.config();
@@ -33,6 +34,13 @@ async function handleGracefulShutdown(signal) {
     console.log('HTTP connection ports successfully closed.');
 
     try {
+      // Close Socket.IO server connections
+      const io = getIO();
+      if (io) {
+        io.close();
+        console.log('Socket.IO server closed.');
+      }
+
       // 1. Gracefully stop BullMQ queue connections and worker processes
       await shutdownQueuesAndWorkers();
 
@@ -101,8 +109,8 @@ async function startBootstrap() {
       console.warn('⚠️ Redis Cache connection failed. Background job workers may be offline.');
     }
 
-    // PLACEHOLDER: Initialize Socket.IO server
-    // await initSocketServer(server);
+    // Initialize Socket.IO server
+    initSocketServer(server);
 
     server.listen(PORT, () => {
       console.log(`🚀 System successfully booted in [${NODE_ENV}] mode`);

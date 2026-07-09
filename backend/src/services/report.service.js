@@ -1,177 +1,613 @@
 import { reportQueue } from '../jobs/index.js';
-import { AuditService } from './audit.service.js';
-import * as exportUtil from '../utils/export.util.js';
 import { StorageService } from './storage/storage.service.js';
-import { prisma } from '../config/database.js';
-
-const auditService = new AuditService();
+import { ReportRepository } from '../repositories/report.repository.js';
+import { DocumentRepository } from '../repositories/documents.repository.js';
+import { CheckoutRepository } from '../repositories/checkout.repository.js';
+import { ApprovalRepository } from '../repositories/approval.repository.js';
+import { SignatureRepository } from '../repositories/signature.repository.js';
+import { AuditRepository } from '../repositories/audit.repository.js';
+import reportUtil from '../utils/report.util.js';
 
 /**
- * Service to orchestrate Compliance Audit Trail Reports generation.
- * Coordinates BullMQ jobs enqueuing, secure PDF/Excel/CSV binary uploads, and signed download links generation.
+ * Standardized service layer error class for Report Domain operations.
  */
+export class ReportServiceError extends Error {
+  constructor(message, code = 'SERVICE_ERROR') {
+    super(message);
+    this.name = 'ReportServiceError';
+    this.code = code;
+  }
+}
+
 export class ReportService {
+  constructor() {
+    this.reportRepository = new ReportRepository();
+    this.documentRepository = new DocumentRepository();
+    this.checkoutRepository = new CheckoutRepository();
+    this.approvalRepository = new ApprovalRepository();
+    this.signatureRepository = new SignatureRepository();
+    this.auditRepository = new AuditRepository();
+  }
+
+  // =========================================================================
+  // Backward-Compatible API Wrappers
+  // =========================================================================
+
   /**
-   * Request a compliance report generation.
-   * Enqueues job to background BullMQ worker thread to keep API non-blocking.
-   * 
-   * @async
-   * @method requestReport
-   * @param {string} reportType - Complete, Document, User, Security, or Compliance
-   * @param {string} format - PDF, Excel, or CSV
-   * @param {Object} [filters={}] - Search criteria and scopes
-   * @param {Object} user - Requesting actor context
-   * @returns {Promise<Object>} Reference to enqueued job ID and details
+   * Legacy wrapper to request report generation.
    */
   async requestReport(reportType, format, filters = {}, user) {
-    if (!user) {
-      throw new Error('Access denied: Authentication context missing.');
-    }
-
-    // Enqueue background processing job
-    const job = await reportQueue.add('generate-compliance-report', {
-      reportType,
-      format,
+    const payload = {
+      type: reportType === 'COMPLETE' ? 'AUDIT_REPORT' : reportType,
+      format: format.toUpperCase(),
       filters,
-      requestedBy: {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      }
-    });
-
+    };
+    const result = await this.createReport(payload, user);
     return {
-      reportId: job.id,
+      reportId: result.id,
       status: 'PENDING',
       reportType,
       format,
       requestedBy: user.email,
-      createdAt: new Date().toISOString()
+      createdAt: result.createdAt,
     };
   }
 
   /**
-   * Retrieves status of compliance report generation.
-   * 
-   * @async
-   * @method getReportStatus
-   * @param {string} reportId - BullMQ Job Identifier
-   * @returns {Promise<Object>} Status, progress, and download reference if finished
+   * Legacy wrapper to retrieve report status.
    */
   async getReportStatus(reportId) {
     // If Redis is offline/Mock queue is used, handle gracefully
     if (reportQueue.constructor.name === 'MockQueue') {
-      return {
-        reportId,
-        status: 'COMPLETED',
-        downloadUrl: null,
-        message: 'Mock/Offline mode: reports are completed without physical file writes.'
-      };
-    }
-
-    const job = await reportQueue.getJob(reportId);
-    if (!job) {
-      return {
-        reportId,
-        status: 'FAILED',
-        error: 'Job details not found.'
-      };
-    }
-
-    const state = await job.getState();
-    
-    if (state === 'completed') {
-      const result = job.returnvalue;
-      
-      // Generate secure signed URL for completed private reports (15 mins window)
-      let downloadUrl = null;
-      if (result && result.fileRef) {
-        const data = await StorageService.generateDownloadUrl('documents', result.fileRef, 900);
-        downloadUrl = data.signedUrl;
+      const report = await this.reportRepository.getReportById(reportId);
+      if (report && report.status === 'COMPLETED') {
+        let downloadUrl = null;
+        if (report.filePath) {
+          const data = await StorageService.generateDownloadUrl('documents', report.filePath, 900);
+          downloadUrl = data.signedUrl;
+        }
+        return {
+          reportId,
+          status: 'COMPLETED',
+          fileRef: report.filePath,
+          downloadUrl,
+          finishedAt: report.completedAt,
+        };
       }
-
-      return {
-        reportId,
-        status: 'COMPLETED',
-        fileRef: result?.fileRef || null,
-        downloadUrl,
-        finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null
-      };
     }
 
-    if (state === 'failed') {
+    const report = await this.reportRepository.getReportById(reportId);
+    if (!report) {
       return {
         reportId,
         status: 'FAILED',
-        error: job.failedReason || 'An error occurred during compilation.'
+        error: 'Job details not found.',
       };
+    }
+
+    let downloadUrl = null;
+    if (report.status === 'COMPLETED' && report.filePath) {
+      const data = await StorageService.generateDownloadUrl('documents', report.filePath, 900);
+      downloadUrl = data.signedUrl;
     }
 
     return {
       reportId,
-      status: state.toUpperCase(),
-      progress: job.progress || 0
+      status: report.status,
+      fileRef: report.filePath,
+      downloadUrl,
+      finishedAt: report.completedAt,
+    };
+  }
+
+  // =========================================================================
+  // Report Lifecycle Workflows
+  // =========================================================================
+
+  /**
+   * Request and initialize a new report request.
+   * Scopes report details and filters based on user role permission constraints.
+   * 
+   * @async
+   * @method createReport
+   * @param {Object} payload - Report parameters
+   * @param {Object} user - Authenticated requester context
+   * @returns {Promise<Object>} Formatted report object details
+   */
+  async createReport(payload, user) {
+    if (!user) {
+      throw new ReportServiceError('Access denied: Authentication context missing.', 'UNAUTHORIZED');
+    }
+
+    if (!reportUtil.isValidReportType(payload.type)) {
+      throw new ReportServiceError(`Invalid report type: ${payload.type}`, 'INVALID_TYPE');
+    }
+
+    if (!reportUtil.isValidReportFormat(payload.format)) {
+      throw new ReportServiceError(`Invalid report format: ${payload.format}`, 'INVALID_FORMAT');
+    }
+
+    // Fetch user department profile details
+    const dbUser = await this.reportRepository.getUserWithDepartment(user.id);
+    const userDept = dbUser?.department?.name || null;
+
+    let targetFilters = payload.filters ? { ...payload.filters } : {};
+
+    // Validate and enforce role based filters access
+    if (user.role === 'ADMIN') {
+      // Super Admin: allows arbitrary filtering
+    } else if (user.role === 'EDITOR') {
+      // Admin/Editor: Restrict report to their own department
+      if (targetFilters.department && targetFilters.department !== userDept) {
+        throw new ReportServiceError('Access denied: EDITOR can only generate reports for their own department.', 'ACCESS_DENIED');
+      }
+      targetFilters.department = userDept;
+    } else {
+      // VIEWER: Restrict to their own user ID and department
+      if (targetFilters.userId && targetFilters.userId !== user.id) {
+        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own activity.', 'ACCESS_DENIED');
+      }
+      if (targetFilters.department && targetFilters.department !== userDept) {
+        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own department.', 'ACCESS_DENIED');
+      }
+      targetFilters.userId = user.id;
+      targetFilters.department = userDept;
+    }
+
+    const normalizedFilters = reportUtil.normalizeFilters(targetFilters);
+    const refNumber = reportUtil.generateReportReference();
+
+    // Create Report database record in QUEUED status
+    const reportRecord = await this.reportRepository.createReport({
+      refNumber,
+      name: payload.name || `${payload.type.split('_').join(' ').toUpperCase()} Report`,
+      type: payload.type,
+      description: payload.description || null,
+      format: payload.format,
+      status: 'QUEUED',
+      userId: user.id,
+      userSnapshot: { id: user.id, email: user.email, role: user.role },
+      departmentSnapshot: userDept,
+      filters: normalizedFilters,
+      sorting: payload.sorting || null,
+      columns: payload.columns || null,
+    });
+
+    // Append history entry
+    await this.reportRepository.createHistoryEntry({
+      reportId: reportRecord.id,
+      action: 'REQUESTED',
+      performedBy: user.email,
+      metadata: { userId: user.id },
+    });
+
+    // Enqueue BullMQ background generation job
+    if (reportQueue.constructor.name === 'MockQueue') {
+      // Trigger execution asynchronously in mock offline mode (skip in test environment to avoid background DB pollution)
+      if (process.env.NODE_ENV !== 'test') {
+        setImmediate(async () => {
+          try {
+            await this.generateReport(reportRecord.id);
+          } catch (err) {
+            console.error(`[Mock Report Execution] Failed generating report ID ${reportRecord.id}:`, err);
+          }
+        });
+      }
+    } else {
+      await reportQueue.add(
+        'generate-compliance-report',
+        {
+          reportId: reportRecord.id,
+          reportType: reportRecord.type,
+          format: reportRecord.format,
+          filters: normalizedFilters,
+          requestedBy: { id: user.id, email: user.email, role: user.role },
+        },
+        { jobId: reportRecord.id }
+      );
+    }
+
+    return reportUtil.formatReportResponse(reportRecord);
+  }
+
+  /**
+   * Generates the report binary dataset, compiles PDF, uploads to private storage,
+   * and updates report status metadata.
+   * 
+   * @async
+   * @method generateReport
+   * @param {string} reportId - Target report ID
+   * @returns {Promise<Object>} Completed report details
+   */
+  async generateReport(reportId) {
+    const report = await this.reportRepository.getReportById(reportId);
+    if (!report) {
+      throw new ReportServiceError('Report record not found.', 'NOT_FOUND');
+    }
+
+    // Update status to PROCESSING
+    await this.reportRepository.updateReportStatus(reportId, 'PROCESSING', {
+      startedAt: new Date(),
+    });
+
+    await this.reportRepository.createHistoryEntry({
+      reportId,
+      action: 'PROCESSING_STARTED',
+      performedBy: 'System Engine',
+    });
+
+    try {
+      // 1. Gather filtered dataset via repositories aggregation routing
+      const dataset = await this.collectReportData(report.type, report.filters);
+
+      // 2. Build PDF Document
+      if (report.format === 'PDF') {
+        const { PDFService } = await import('./pdf.service.js');
+        const pdfService = new PDFService();
+        
+        const pdfInfo = await pdfService.generateReportPDF(report, dataset);
+
+        // Target upload path
+        const date = new Date();
+        const year = date.getFullYear().toString();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const filename = pdfInfo.fileName || `report_${Date.now()}.pdf`;
+        const fileRef = `reports/audit/${year}/${month}/${report.id}/${filename}`;
+
+        // Upload physical file to Supabase/S3 Private Storage bucket
+        await StorageService.uploadObject('documents', fileRef, pdfInfo.buffer, {
+          contentType: 'application/pdf',
+          cacheControl: '300',
+        });
+
+        // Calculate metrics
+        const completedAt = new Date();
+        const startedTime = report.startedAt ? new Date(report.startedAt) : new Date();
+        const processingTime = completedAt.getTime() - startedTime.getTime();
+
+        // Persist Generated file info
+        const updatedReport = await this.reportRepository.updateGeneratedFileInfo(reportId, {
+          storageProvider: 'SUPABASE',
+          bucketName: 'documents',
+          filePath: fileRef,
+          fileName: filename,
+          fileSize: pdfInfo.fileSize,
+          fileHash: pdfInfo.fileHash,
+          generatedAt: completedAt,
+          expiryDate: new Date(Date.now() + 30 * 24 * 3600 * 1000), // 30 days retention expiry
+        });
+
+        // Mark COMPLETED
+        const finalizedReport = await this.reportRepository.updateReportStatus(reportId, 'COMPLETED', {
+          completedAt,
+          processingTime,
+        });
+
+        await this.reportRepository.createHistoryEntry({
+          reportId,
+          action: 'GENERATED',
+          performedBy: 'System Engine',
+          metadata: { filePath: fileRef },
+        });
+
+        // Trigger integrations hooks placeholder
+        this.reportGenerated(finalizedReport);
+
+        return reportUtil.formatReportResponse(finalizedReport);
+      } else {
+        throw new ReportServiceError(`Format ${report.format} generation is not supported yet.`, 'UNSUPPORTED_FORMAT');
+      }
+    } catch (error) {
+      console.error(`[ReportService] Failure during report compilation:`, error);
+      
+      const failedReport = await this.reportRepository.updateReportStatus(reportId, 'FAILED', {
+        completedAt: new Date(),
+        failureReason: error.message,
+      });
+
+      await this.reportRepository.createHistoryEntry({
+        reportId,
+        action: 'FAILED',
+        performedBy: 'System Engine',
+        metadata: { error: error.message },
+      });
+
+      this.reportFailed(reportId, error);
+
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieve report details, enforcing security RBAC checks.
+   * 
+   * @async
+   * @method getReport
+   * @param {string} reportId - Report UUID
+   * @param {Object} user - Authenticated user context
+   * @returns {Promise<Object>} Formatted report object
+   */
+  async getReport(reportId, user) {
+    if (!user) {
+      throw new ReportServiceError('Access denied: Authentication context missing.', 'UNAUTHORIZED');
+    }
+
+    const report = await this.reportRepository.getReportById(reportId);
+    if (!report) {
+      throw new ReportServiceError('Report not found.', 'NOT_FOUND');
+    }
+
+    // Super Admin bypass
+    if (user.role === 'ADMIN') {
+      return reportUtil.formatReportResponse(report);
+    }
+
+    const dbUser = await this.reportRepository.getUserWithDepartment(user.id);
+    const userDept = dbUser?.department?.name || null;
+
+    // EDITOR can access reports within their own department or their own creations
+    if (user.role === 'EDITOR') {
+      if (report.departmentSnapshot === userDept || report.userId === user.id) {
+        return reportUtil.formatReportResponse(report);
+      }
+      throw new ReportServiceError('Access denied: Department scope mismatch.', 'FORBIDDEN');
+    }
+
+    // VIEWER can only access their own reports
+    if (report.userId === user.id) {
+      return reportUtil.formatReportResponse(report);
+    }
+
+    throw new ReportServiceError('Access denied: Report is restricted to owner.', 'FORBIDDEN');
+  }
+
+  /**
+   * Lists reports created by a user.
+   */
+  async getUserReports(userId, options = {}, user) {
+    if (user.role !== 'ADMIN' && user.id !== userId) {
+      throw new ReportServiceError('Access denied: Cannot retrieve reports for other users.', 'FORBIDDEN');
+    }
+    const result = await this.reportRepository.listReports({ userId }, options);
+    return {
+      reports: result.logs.map(reportUtil.formatReportResponse),
+      total: result.total,
     };
   }
 
   /**
-   * Compiles the audit log list and stores generated binary report physically.
-   * Invoked within the BullMQ worker processor block.
-   * 
-   * @async
-   * @method generateAndStoreReportFile
-   * @param {string} reportId - ID of report job
-   * @param {string} reportType - COMPLETE, DOCUMENT, USER_ACTIVITY, SECURITY, COMPLIANCE
-   * @param {string} format - PDF, EXCEL, CSV
-   * @param {Object} filters - Filter arguments
-   * @param {Object} requestedBy - Operator user snapshot
-   * @returns {Promise<{fileRef: string}>} File reference key details
+   * Lists reports created for a department.
    */
-  async generateAndStoreReportFile(reportId, reportType, format, filters, requestedBy) {
-    // 1. Fetch matching logs (respecting department/user permissions)
-    const { logs } = await auditService.searchAuditLogs(filters, { limit: 100000 }, requestedBy);
+  async getDepartmentReports(departmentName, options = {}, user) {
+    const dbUser = await this.reportRepository.getUserWithDepartment(user.id);
+    const userDept = dbUser?.department?.name || null;
 
-    // 2. Build Binary Buffer
-    let buffer;
-    let contentType;
-    const cleanFormat = format.toUpperCase();
-
-    if (cleanFormat === 'PDF') {
-      buffer = await exportUtil.generatePDFReport(logs, reportType);
-      contentType = 'application/pdf';
-    } else if (cleanFormat === 'EXCEL') {
-      buffer = await exportUtil.generateExcelReport(logs, reportType);
-      contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    } else {
-      buffer = exportUtil.generateCSVReport(logs);
-      contentType = 'text/csv';
+    if (user.role !== 'ADMIN' && (user.role !== 'EDITOR' || userDept !== departmentName)) {
+      throw new ReportServiceError('Access denied: Department reports restricted.', 'FORBIDDEN');
     }
 
-    // 3. Build target destination storage key
-    const date = new Date();
-    const year = date.getFullYear().toString();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const filename = `audit_report_${Date.now()}.${format.toLowerCase()}`;
-    const fileRef = `reports/audit/${year}/${month}/${reportId}/${filename}`;
+    const result = await this.reportRepository.listReports({ departmentSnapshot: departmentName }, options);
+    return {
+      reports: result.logs.map(reportUtil.formatReportResponse),
+      total: result.total,
+    };
+  }
 
-    // 4. Upload object physically to private documents bucket
-    await StorageService.uploadObject('documents', fileRef, buffer, {
-      contentType,
-      cacheControl: '300'
+  /**
+   * Transition queued report status to ARCHIVED.
+   */
+  async cancelReport(reportId, user) {
+    const report = await this.getReport(reportId, user);
+    if (report.status !== 'QUEUED' && report.status !== 'PROCESSING') {
+      throw new ReportServiceError('Cannot cancel reports that have already completed or failed.', 'INVALID_TRANSITION');
+    }
+
+    const updated = await this.reportRepository.updateReportStatus(reportId, 'ARCHIVED');
+    await this.reportRepository.createHistoryEntry({
+      reportId,
+      action: 'ARCHIVED',
+      performedBy: user.email,
+      metadata: { reason: 'User cancelled request' },
     });
 
-    // 5. Audit the export generation event itself
-    await auditService.recordEvent({
-      userId: requestedBy.id,
-      category: 'SECURITY',
-      action: 'EXPORT',
-      eventType: 'AUDIT_EXPORT_COMPLETED',
-      result: 'SUCCESS',
-      description: `Audit trail report generated: Category: ${reportType}, Format: ${format}, Destination: ${fileRef}`,
-      metadata: { reportId, reportType, format, fileRef }
+    return reportUtil.formatReportResponse(updated);
+  }
+
+  /**
+   * Archive completed reports.
+   */
+  async archiveReport(reportId, user) {
+    const report = await this.getReport(reportId, user);
+    if (report.status !== 'COMPLETED') {
+      throw new ReportServiceError('Only completed reports can be archived.', 'INVALID_TRANSITION');
+    }
+
+    const updated = await this.reportRepository.updateReportStatus(reportId, 'ARCHIVED');
+    await this.reportRepository.createHistoryEntry({
+      reportId,
+      action: 'ARCHIVED',
+      performedBy: user.email,
     });
 
-    return { fileRef };
+    this.reportArchived(updated);
+
+    return reportUtil.formatReportResponse(updated);
+  }
+
+  // =========================================================================
+  // Data Collection Router (Internal)
+  // =========================================================================
+
+  /**
+   * Routing data aggregation collectors based on report type.
+   * 
+   * @async
+   * @method collectReportData
+   * @param {string} type - ReportType classification
+   * @param {Object} filters - Filter criteria JSON
+   * @returns {Promise<Array<Object>>} Resolved datasets list
+   */
+  async collectReportData(type, filters) {
+    switch (type) {
+      case 'DOCUMENT_ACTIVITY':
+        return await this.collectDocumentData(filters);
+      case 'CHECKOUT_REPORT':
+      case 'RETURN_REPORT':
+        return await this.collectCheckoutData(filters);
+      case 'APPROVAL_REPORT':
+        return await this.collectApprovalData(filters);
+      case 'SIGNATURE_REPORT':
+        return await this.collectSignatureData(filters);
+      case 'AUDIT_REPORT':
+      case 'SECURITY_REPORT':
+      case 'COMPLIANCE_REPORT':
+      case 'SYSTEM_REPORT':
+        return await this.collectAuditData({ ...filters, type });
+      case 'USER_ACTIVITY':
+        return await this.collectUserActivityData(filters);
+      default:
+        throw new ReportServiceError(`Unsupported report dataset source: ${type}`, 'UNSUPPORTED_TYPE');
+    }
+  }
+
+  /**
+   * Gather document lifecycle activity metrics.
+   */
+  async collectDocumentData(filters) {
+    const listOptions = {
+      departmentId: filters.departmentId,
+      classification: filters.classification,
+      status: filters.status,
+      search: filters.search,
+      limit: 100000,
+    };
+    const result = await this.documentRepository.list(listOptions);
+    return result.documents || [];
+  }
+
+  /**
+   * Gather checkouts.
+   */
+  async collectCheckoutData(filters) {
+    const checkoutFilters = {
+      department: filters.department,
+      status: filters.status,
+      requestedById: filters.userId,
+    };
+    const result = await this.checkoutRepository.findAll(checkoutFilters, { limit: 100000 });
+    return result.checkouts || [];
+  }
+
+  /**
+   * Gather approvals.
+   */
+  async collectApprovalData(filters) {
+    const result = await this.approvalRepository.findAll({
+      requesterId: filters.userId,
+      status: filters.status,
+    }, { limit: 100000 });
+    return result.approvals || [];
+  }
+
+  /**
+   * Gather signatures.
+   */
+  async collectSignatureData(filters) {
+    const result = await this.signatureRepository.findAll({
+      userId: filters.userId,
+      status: filters.status,
+    }, { limit: 100000 });
+    return result.signatures || [];
+  }
+
+  /**
+   * Gather audit logs trail.
+   */
+  async collectAuditData(filters) {
+    const auditFilters = {
+      userId: filters.userId,
+      department: filters.department,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+    };
+    // Map specific report categories
+    if (filters.type === 'SECURITY_REPORT') {
+      auditFilters.category = 'SECURITY';
+    } else if (filters.type === 'COMPLIANCE_REPORT') {
+      auditFilters.category = 'COMPLIANCE';
+    }
+    const result = await this.auditRepository.list(auditFilters, { limit: 100000 });
+    return result.logs || [];
+  }
+
+  /**
+   * Gather user activities.
+   */
+  async collectUserActivityData(filters) {
+    const auditFilters = {
+      userId: filters.userId,
+      department: filters.department,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+    };
+    const result = await this.auditRepository.list(auditFilters, { limit: 100000 });
+    return result.logs || [];
+  }
+
+  // =========================================================================
+  // Analytics Dashboard Gatherer
+  // =========================================================================
+
+  /**
+   * Retrieves aggregated statistics for charts visualization.
+   * 
+   * @async
+   * @method getDashboardAnalytics
+   * @param {Object} user - Authenticated caller context
+   * @returns {Promise<Object>} Aggregated analytics data object
+   */
+  async getDashboardAnalytics(user) {
+    if (user.role !== 'ADMIN') {
+      throw new ReportServiceError('Access denied: Analytics dashboards require ADMIN privilege.', 'FORBIDDEN');
+    }
+
+    const [docs, checkouts, approvals, signatures, audits, users] = await Promise.all([
+      this.reportRepository.getDocumentStats(),
+      this.reportRepository.getCheckoutStats(),
+      this.reportRepository.getApprovalStats(),
+      this.reportRepository.getSignatureStats(),
+      this.reportRepository.getAuditStats(),
+      this.reportRepository.getUserActivityStats(),
+    ]);
+
+    return {
+      documents: docs,
+      checkouts,
+      approvals,
+      signatures,
+      auditLogs: audits,
+      userActivity: users,
+    };
+  }
+
+  // =========================================================================
+  // Integration Hooks (Placeholders)
+  // =========================================================================
+
+  reportRequested(report) {
+    // Hook for audit trails or socket updates
+  }
+
+  reportGenerated(report) {
+    // Hook for email notify triggers
+  }
+
+  reportFailed(reportId, error) {
+    // Hook for alarm alerts notifications
+  }
+
+  reportArchived(report) {
+    // Hook
   }
 }
 

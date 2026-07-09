@@ -2,9 +2,6 @@ import { Queue, Worker } from 'bullmq';
 import env from '../config/env.js';
 import { getQueueConnectionOptions, defaultJobOptions, queueConfigs } from '../config/bullmq.js';
 import { lifecycleService } from '../services/lifecycle.service.js';
-import { ReportService } from '../services/report.service.js';
-
-const reportService = new ReportService();
 
 // --- Mocks for Offline Mode ---
 class MockQueue {
@@ -95,6 +92,8 @@ async function processPreviewJob(job) {
 async function processReportJob(job) {
   console.log(`[Report Worker] Processing job ID ${job.id} (Template: ${job.name})`);
   if (job.name === 'generate-compliance-report') {
+    const { ReportService } = await import('../services/report.service.js');
+    const reportService = new ReportService();
     const { reportType, format, filters, requestedBy } = job.data;
     const result = await reportService.generateAndStoreReportFile(
       job.id,

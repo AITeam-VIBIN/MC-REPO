@@ -6,7 +6,7 @@ import { AuditRepository, AuditRepositoryError } from '../../src/repositories/au
 import { AuditService } from '../../src/services/audit.service.js';
 import * as auditUtil from '../../src/utils/audit.util.js';
 import { eventBus } from '../../src/shared/event-bus.js';
-import { mockDepartment, mockRegularUser, mockVault, mockFolder, mockDocument } from '../fixtures/documents.fixture.js';
+import { mockDepartment, mockRegularUser, mockAdminUser, mockVault, mockFolder, mockDocument } from '../fixtures/documents.fixture.js';
 
 test.describe('Audit Domain Unit Tests', () => {
   let auditRepository;
@@ -169,7 +169,7 @@ test.describe('Audit Domain Unit Tests', () => {
       assert.strictEqual(log1.userId, mockRegularUser.id);
       assert.strictEqual(log1.roleSnapshot, mockRegularUser.role);
       assert.strictEqual(log1.departmentSnapshot, mockDepartment.name);
-      assert.strictEqual(log1.prevRecordHash, '');
+      assert.ok(log1.prevRecordHash === '' || log1.prevRecordHash === null);
       assert.ok(log1.recordHash);
 
       const log2 = await auditService.recordEvent({
@@ -186,6 +186,9 @@ test.describe('Audit Domain Unit Tests', () => {
 
       // Verify overall chain validity
       const verification = await auditService.validateAuditIntegrity();
+      if (!verification.isValid) {
+        console.log('AUDIT INTEGRITY ANOMALIES:', JSON.stringify(verification.anomalies, null, 2));
+      }
       assert.strictEqual(verification.isValid, true);
       assert.strictEqual(verification.anomalies.length, 0);
     });
@@ -213,7 +216,7 @@ test.describe('Audit Domain Unit Tests', () => {
 
   test.describe('Event Bus', () => {
     test('event listeners trigger auto audit captures successfully', async () => {
-      let documentLogs = await auditService.searchAuditLogs({ category: 'DOCUMENT' });
+      let documentLogs = await auditService.searchAuditLogs({ category: 'DOCUMENT' }, {}, mockAdminUser);
       assert.strictEqual(documentLogs.total, 0);
 
       // Emit document upload trigger via bus
@@ -226,7 +229,7 @@ test.describe('Audit Domain Unit Tests', () => {
       // Wait a short duration to let the event listener promise resolve
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      documentLogs = await auditService.searchAuditLogs({ category: 'DOCUMENT' });
+      documentLogs = await auditService.searchAuditLogs({ category: 'DOCUMENT' }, {}, mockAdminUser);
       assert.strictEqual(documentLogs.total, 1);
       assert.strictEqual(documentLogs.logs[0].referenceType, 'DOCUMENT');
       assert.strictEqual(documentLogs.logs[0].referenceId, mockDocument.id);

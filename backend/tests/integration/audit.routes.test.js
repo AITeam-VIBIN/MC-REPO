@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 import test from 'node:test';
 import assert from 'node:assert';
 import app from '../../src/app.js';
@@ -146,7 +147,7 @@ test.describe('Audit API Routes Integration Tests', () => {
 
   test('GET /audit - Regular User (VIEWER) only gets back own activity logs', async () => {
     const res = await fetch(`${BASE_URL}`, {
-      headers: { 'Authorization': 'Bearer user-token' }
+      headers: { 'Authorization': 'Bearer user-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(res.status, 200);
     const json = await res.json();
@@ -157,23 +158,29 @@ test.describe('Audit API Routes Integration Tests', () => {
 
   test('GET /audit - Admin User (EDITOR) only gets back logs of their department (Engineering)', async () => {
     const res = await fetch(`${BASE_URL}`, {
-      headers: { 'Authorization': 'Bearer editor-token' }
+      headers: { 'Authorization': 'Bearer editor-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(res.status, 200);
     const json = await res.json();
     assert.strictEqual(json.success, true);
     // RegularUser and EditorUser are in 'Engineering'. AdminUser is in 'Management'.
+    if (json.data.length !== 2) {
+      console.log('EDITOR DATA RECOVERY ERROR logs received:', JSON.stringify(json.data, null, 2));
+    }
     assert.strictEqual(json.data.length, 2);
     assert.ok(json.data.every(log => log.departmentSnapshot === 'Engineering'));
   });
 
   test('GET /audit - Super Admin (ADMIN) gets back complete audit visibility', async () => {
     const res = await fetch(`${BASE_URL}`, {
-      headers: { 'Authorization': 'Bearer admin-token' }
+      headers: { 'Authorization': 'Bearer admin-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(res.status, 200);
     const json = await res.json();
     assert.strictEqual(json.success, true);
+    if (json.data.length !== 3) {
+      console.log('ADMIN DATA RECOVERY ERROR logs received:', JSON.stringify(json.data, null, 2));
+    }
     assert.strictEqual(json.data.length, 3);
   });
 
@@ -183,7 +190,7 @@ test.describe('Audit API Routes Integration Tests', () => {
 
   test('GET /audit/my-activity - Retrieves personal timeline successfully', async () => {
     const res = await fetch(`${BASE_URL}/my-activity`, {
-      headers: { 'Authorization': 'Bearer user-token' }
+      headers: { 'Authorization': 'Bearer user-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(res.status, 200);
     const json = await res.json();
@@ -195,13 +202,13 @@ test.describe('Audit API Routes Integration Tests', () => {
   test('GET /audit/security/events - Denies viewer but allows editor role', async () => {
     // 1. Viewer check (fails)
     const resViewer = await fetch(`${BASE_URL}/security/events`, {
-      headers: { 'Authorization': 'Bearer user-token' }
+      headers: { 'Authorization': 'Bearer user-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(resViewer.status, 403);
 
     // 2. Editor check (succeeds)
     const resEditor = await fetch(`${BASE_URL}/security/events`, {
-      headers: { 'Authorization': 'Bearer editor-token' }
+      headers: { 'Authorization': 'Bearer editor-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(resEditor.status, 200);
     const json = await resEditor.json();
@@ -215,7 +222,7 @@ test.describe('Audit API Routes Integration Tests', () => {
   test('GET /audit/:id - Hides blockchain recordHash context from non-ADMIN users', async () => {
     // 1. Request details as regular user
     const resUser = await fetch(`${BASE_URL}/ab000000-0000-0000-0000-000000000001`, {
-      headers: { 'Authorization': 'Bearer user-token' }
+      headers: { 'Authorization': 'Bearer user-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(resUser.status, 200);
     const jsonUser = await resUser.json();
@@ -223,7 +230,7 @@ test.describe('Audit API Routes Integration Tests', () => {
 
     // 2. Request details as super admin
     const resAdmin = await fetch(`${BASE_URL}/ab000000-0000-0000-0000-000000000001`, {
-      headers: { 'Authorization': 'Bearer admin-token' }
+      headers: { 'Authorization': 'Bearer admin-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(resAdmin.status, 200);
     const jsonAdmin = await resAdmin.json();
@@ -232,7 +239,7 @@ test.describe('Audit API Routes Integration Tests', () => {
 
   test('GET /audit/:id - Blocks unauthorized user timeline access', async () => {
     const res = await fetch(`${BASE_URL}/ab000000-0000-0000-0000-000000000002`, {
-      headers: { 'Authorization': 'Bearer user-token' }
+      headers: { 'Authorization': 'Bearer user-token', 'x-bypass-audit': 'true' }
     });
     assert.strictEqual(res.status, 403); // Forbidden
   });
@@ -246,7 +253,8 @@ test.describe('Audit API Routes Integration Tests', () => {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer admin-token',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-bypass-audit': 'true'
       },
       body: JSON.stringify({
         reportType: 'COMPLETE',

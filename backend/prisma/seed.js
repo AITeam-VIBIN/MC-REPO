@@ -41,6 +41,12 @@ async function main() {
   console.log('Seeded users');
 
   // 3. Seed Vaults & Folders (Clean previous structures first)
+  await prisma.reportHistory.deleteMany();
+  await prisma.report.deleteMany();
+  await prisma.scheduledReport.deleteMany();
+  await prisma.notificationDelivery.deleteMany();
+  await prisma.notificationPreference.deleteMany();
+  await prisma.notification.deleteMany();
   await prisma.signatureHistory.deleteMany();
   await prisma.digitalSignature.deleteMany();
   await prisma.checkoutMovement.deleteMany();
@@ -817,6 +823,284 @@ async function main() {
   });
 
   console.log('Seeded digital signatures');
+
+  // Seed notification preferences
+  await prisma.notificationPreference.create({
+    data: {
+      userId: adminUser.id,
+      emailEnabled: true,
+      inAppEnabled: true,
+      realTimeEnabled: true,
+      categoryPreferences: {
+        DOCUMENT: true,
+        CHECKOUT: true,
+        APPROVAL: true,
+        SIGNATURE: true,
+        SECURITY: true,
+        SYSTEM: true,
+      },
+    },
+  });
+
+  await prisma.notificationPreference.create({
+    data: {
+      userId: viewerUser.id,
+      emailEnabled: true,
+      inAppEnabled: true,
+      realTimeEnabled: true,
+      categoryPreferences: {
+        DOCUMENT: true,
+        CHECKOUT: true,
+        APPROVAL: true,
+        SIGNATURE: true,
+        SECURITY: true,
+        SYSTEM: true,
+      },
+    },
+  });
+
+  // Seed sample notifications
+  const notif1 = await prisma.notification.create({
+    data: {
+      refNumber: 'NOTIF-20260708-0001',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      departmentSnapshot: 'Engineering',
+      title: 'Document Upload Successful',
+      message: 'Your document Technical Specifications has been uploaded.',
+      category: 'DOCUMENT',
+      priority: 'NORMAL',
+      referenceType: 'DOCUMENT',
+      referenceId: 'da000000-0000-0000-0000-000000000011',
+      status: 'READ',
+    },
+  });
+
+  await prisma.notificationDelivery.create({
+    data: {
+      notificationId: notif1.id,
+      channel: 'IN_APP',
+      status: 'READ',
+      attemptCount: 1,
+      deliveredAt: new Date(),
+    },
+  });
+
+  const notif2 = await prisma.notification.create({
+    data: {
+      refNumber: 'NOTIF-20260708-0002',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      departmentSnapshot: 'Engineering',
+      title: 'Checkout Return Approaching Overdue',
+      message: 'The document Project Spec Checkout is due back soon.',
+      category: 'CHECKOUT',
+      priority: 'HIGH',
+      referenceType: 'CHECKOUT',
+      referenceId: 'c0000000-0000-0000-0000-000000000001',
+      status: 'DELIVERED',
+    },
+  });
+
+  await prisma.notificationDelivery.create({
+    data: {
+      notificationId: notif2.id,
+      channel: 'REAL_TIME',
+      status: 'DELIVERED',
+      attemptCount: 1,
+      deliveredAt: new Date(),
+    },
+  });
+
+  const notif3 = await prisma.notification.create({
+    data: {
+      refNumber: 'NOTIF-20260708-0003',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      departmentSnapshot: 'Legal',
+      title: 'Approval Action Required',
+      message: 'Please review and sign the NDA Agreement request.',
+      category: 'APPROVAL',
+      priority: 'HIGH',
+      referenceType: 'APPROVAL',
+      referenceId: 'a0000000-0000-0000-0000-000000000001',
+      status: 'PENDING',
+    },
+  });
+
+  await prisma.notificationDelivery.create({
+    data: {
+      notificationId: notif3.id,
+      channel: 'EMAIL',
+      status: 'PENDING',
+      attemptCount: 0,
+    },
+  });
+
+  const notif4 = await prisma.notification.create({
+    data: {
+      refNumber: 'NOTIF-20260708-0004',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      departmentSnapshot: 'Legal',
+      title: 'Security Alert: New Login Detected',
+      message: 'A successful login occurred from IP 192.168.1.100.',
+      category: 'SECURITY',
+      priority: 'CRITICAL',
+      status: 'PENDING',
+    },
+  });
+
+  await prisma.notificationDelivery.create({
+    data: {
+      notificationId: notif4.id,
+      channel: 'IN_APP',
+      status: 'DELIVERED',
+      attemptCount: 1,
+      deliveredAt: new Date(),
+    },
+  });
+
+  console.log('Seeded notifications');
+
+  // 11. Seed Scheduled Reports
+  const sched1 = await prisma.scheduledReport.create({
+    data: {
+      name: 'Monthly Checkout Audit',
+      reportType: 'CHECKOUT_REPORT',
+      format: 'PDF',
+      frequency: 'MONTHLY',
+      recipients: ['admin@mitcon.com'],
+      isActive: true,
+      ownerId: adminUser.id,
+      nextExecutionTime: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+    }
+  });
+  console.log('Seeded scheduled reports');
+
+  // 12. Seed Reports
+  const report1 = await prisma.report.create({
+    data: {
+      refNumber: 'REP-20260709-0001',
+      name: 'Document Activity Report',
+      type: 'DOCUMENT_ACTIVITY',
+      description: 'Activity history tracking on technical specifications folder',
+      format: 'PDF',
+      status: 'COMPLETED',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      departmentSnapshot: 'Legal',
+      filters: { department: 'Engineering', startDate: '2026-07-01T00:00:00.000Z' },
+      storageProvider: 'SUPABASE',
+      bucketName: 'mc-documents',
+      filePath: 'reports/audit/2026/07/rep-0001.pdf',
+      fileName: 'rep-0001.pdf',
+      fileSize: 10240n,
+      fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      generatedAt: new Date(),
+    }
+  });
+
+  const report2 = await prisma.report.create({
+    data: {
+      refNumber: 'REP-20260709-0002',
+      name: 'Checkout Monthly Report',
+      type: 'CHECKOUT_REPORT',
+      description: 'Monthly summary of checked out files',
+      format: 'EXCEL',
+      status: 'COMPLETED',
+      userId: viewerUser.id,
+      userSnapshot: { id: viewerUser.id, email: viewerUser.email },
+      departmentSnapshot: 'Engineering',
+      filters: { department: 'Engineering' },
+      storageProvider: 'SUPABASE',
+      bucketName: 'mc-documents',
+      filePath: 'reports/audit/2026/07/rep-0002.xlsx',
+      fileName: 'rep-0002.xlsx',
+      fileSize: 20480n,
+      fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      generatedAt: new Date(),
+      scheduledReportId: sched1.id,
+    }
+  });
+
+  const report3 = await prisma.report.create({
+    data: {
+      refNumber: 'REP-20260709-0003',
+      name: 'Audit Compliance Report',
+      type: 'COMPLIANCE_REPORT',
+      description: 'System actions and integrity chain validation summary',
+      format: 'PDF',
+      status: 'COMPLETED',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      departmentSnapshot: 'Legal',
+      filters: {},
+      storageProvider: 'SUPABASE',
+      bucketName: 'mc-documents',
+      filePath: 'reports/audit/2026/07/rep-0003.pdf',
+      fileName: 'rep-0003.pdf',
+      fileSize: 45600n,
+      fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      generatedAt: new Date(),
+    }
+  });
+
+  const report4 = await prisma.report.create({
+    data: {
+      refNumber: 'REP-20260709-0004',
+      name: 'Security Report',
+      type: 'SECURITY_REPORT',
+      description: 'System failures, login anomalies and access denials',
+      format: 'CSV',
+      status: 'FAILED',
+      userId: adminUser.id,
+      userSnapshot: { id: adminUser.id, email: adminUser.email },
+      departmentSnapshot: 'Legal',
+      filters: { category: 'SECURITY' },
+      failureReason: 'Database timeout while validating blockchain hashes.',
+      startedAt: new Date(),
+      completedAt: new Date(),
+      processingTime: 12000,
+    }
+  });
+  console.log('Seeded reports');
+
+  // 13. Seed Report Histories
+  await prisma.reportHistory.create({
+    data: {
+      reportId: report1.id,
+      action: 'REQUESTED',
+      performedBy: adminUser.email,
+      timestamp: new Date(Date.now() - 5000),
+    }
+  });
+  await prisma.reportHistory.create({
+    data: {
+      reportId: report1.id,
+      action: 'GENERATED',
+      performedBy: 'System Worker',
+      timestamp: new Date(),
+    }
+  });
+  await prisma.reportHistory.create({
+    data: {
+      reportId: report4.id,
+      action: 'REQUESTED',
+      performedBy: adminUser.email,
+      timestamp: new Date(Date.now() - 2000),
+    }
+  });
+  await prisma.reportHistory.create({
+    data: {
+      reportId: report4.id,
+      action: 'FAILED',
+      performedBy: 'System Worker',
+      timestamp: new Date(),
+      metadata: { error: 'Database timeout' }
+    }
+  });
+  console.log('Seeded report histories');
 
   console.log('Seeding finished successfully.');
 }
