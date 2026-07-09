@@ -166,6 +166,34 @@ export class StorageService {
   }
 
   /**
+   * Streams a binary object payload directly to a writable response stream.
+   * 
+   * @async
+   * @static
+   * @function streamObjectDownload
+   * @param {string} bucket - Source storage bucket identifier
+   * @param {string} path - Remote file source key path
+   * @param {import('express').Response} res - Express Response object
+   * @returns {Promise<void>}
+   * @throws {StorageError}
+   */
+  static async streamObjectDownload(bucket, path, res) {
+    try {
+      const { data, error } = await supabaseAdmin.storage
+        .from(bucket)
+        .download(path);
+
+      if (error) throw error;
+      
+      const buffer = Buffer.from(await data.arrayBuffer());
+      res.write(buffer);
+      res.end();
+    } catch (err) {
+      throw handleStorageException(err, 'DOWNLOAD_FAILURE');
+    }
+  }
+
+  /**
    * Deletes a binary object from the target bucket.
    * 
    * @async

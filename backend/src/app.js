@@ -9,7 +9,9 @@ import {
   urlEncodedParser,
   compressionMiddleware,
   apiLimiter,
-  errorLogger
+  errorLogger,
+  errorMiddleware,
+  performanceMiddleware
 } from './middleware/index.js';
 import { auditMiddleware } from './middleware/audit.middleware.js';
 import authRouter from './auth/auth.routes.js';
@@ -20,8 +22,12 @@ import checkoutRouter from './routes/checkout.routes.js';
 import approvalRouter from './routes/approval.routes.js';
 import signatureRouter from './routes/signature.routes.js';
 import auditRouter from './routes/audit.routes.js';
+import analyticsRouter from './routes/analytics.routes.js';
 
 const app = express();
+
+// Register performance monitoring as the absolute first step
+app.use(performanceMiddleware);
 
 // ==========================================
 // 1. Global Pre-Routing Middleware Chain
@@ -83,6 +89,9 @@ app.use('/api/v1/signatures', signatureRouter);
 // Mount Audit router
 app.use('/api/v1/audit', auditRouter);
 
+// Mount Analytics router
+app.use('/api/v1/analytics', analyticsRouter);
+
 // Base health probe check route
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -108,17 +117,6 @@ app.use((req, res, next) => {
 app.use(errorLogger);
 
 // Global Centralized Error Handler Middleware (Response Formatter)
-app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  const errorCode = err.code || 'INTERNAL_SERVER_ERROR';
-
-  res.status(statusCode).json({
-    success: false,
-    error: {
-      code: errorCode,
-      message: err.message || 'An unexpected internal error occurred'
-    }
-  });
-});
+app.use(errorMiddleware);
 
 export default app;

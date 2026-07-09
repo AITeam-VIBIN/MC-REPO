@@ -2,12 +2,13 @@ import { supabaseAnon } from '../config/supabase.js';
 import { SessionRepository } from '../repositories/security.repository.js';
 import { PermissionResolutionService, AUTHORIZATION_ERRORS } from '../services/security.service.js';
 import { parseTokenHeader } from '../auth/auth.routes.js';
+import logUtil from '../utils/logger.util.js';
 
 const permissionResolutionService = new PermissionResolutionService();
 
 /**
  * Express middleware protecting endpoints against unauthenticated requests.
- * Evaluates the Authorization header and verifies the JWT against Supabase.
+ * Evaluates the Authorization header and secure HTTP-Only cookies.
  * 
  * @async
  * @function requireAuth
@@ -18,8 +19,14 @@ const permissionResolutionService = new PermissionResolutionService();
  */
 export async function requireAuth(req, res, next) {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
-    const token = parseTokenHeader(authHeader);
+
+    if (authHeader) {
+      token = parseTokenHeader(authHeader);
+    } else if (req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    }
 
     if (!token) {
       return res.status(401).json({
@@ -31,10 +38,26 @@ export async function requireAuth(req, res, next) {
       });
     }
 
+    // Verify token structure (relaxed in test mode for mock tokens)
+    if (process.env.NODE_ENV !== 'test') {
+      const tokenParts = token.split('.');
+      if (tokenParts.length !== 3) {
+        logUtil.warn('Rejected malformed JWT token structure attempt.', { ip: req.ip });
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: AUTHORIZATION_ERRORS.UNAUTHORIZED.code,
+            message: 'Invalid token structure.',
+          },
+        });
+      }
+    }
+
     // Authenticate JWT directly against Supabase Identity provider
     const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
 
     if (error || !user) {
+      logUtil.warn('Supabase JWT authentication failed.', { error: error?.message, ip: req.ip });
       return res.status(401).json({
         success: false,
         error: {

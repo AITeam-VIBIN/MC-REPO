@@ -4,6 +4,8 @@ import app from './app.js';
 import { shutdownQueuesAndWorkers } from './jobs/index.js';
 import redis from './config/redis.js';
 import { initSocketServer, getIO } from './config/socket.js';
+import { prisma } from './config/database.js';
+import { supabaseAdmin } from './config/supabase.js';
 
 // Load environmental parameters
 dotenv.config();
@@ -97,16 +99,47 @@ async function startBootstrap() {
   try {
     console.log('Initializing MITCON BCD-FSS application bootstrap...');
 
-    // PLACEHOLDER: Verify Prisma database connection
-    // await prisma.$connect();
-    // console.log('Database connection tested successfully.');
+    let dbReady = false;
+    let redisReady = false;
+    let storageReady = false;
 
-    // Verify Redis connection client gracefully for local development runs
+    // Verify Prisma database connection
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      console.log('Database connection tested successfully.');
+      dbReady = true;
+    } catch (dbErr) {
+      console.error('❌ Database connection failed:', dbErr.message);
+    }
+
+    // Verify Redis connection client gracefully
     try {
       await redis.ping();
       console.log('Redis Cache connection verified.');
+      redisReady = true;
     } catch (redisErr) {
       console.warn('⚠️ Redis Cache connection failed. Background job workers may be offline.');
+    }
+
+    // Verify Supabase Storage connection
+    try {
+      const { data, error } = await supabaseAdmin.storage.listBuckets();
+      if (error) throw error;
+      console.log('Supabase Storage connection verified.');
+      storageReady = true;
+    } catch (storageErr) {
+      console.warn('⚠️ Supabase Storage connection failed:', storageErr.message);
+    }
+
+    const isReady = dbReady && (NODE_ENV !== 'production' || (redisReady && storageReady));
+
+    if (!isReady) {
+      console.error('❌ Startup Health Check: FAILED');
+      if (NODE_ENV === 'production') {
+        process.exit(1);
+      }
+    } else {
+      console.log('✅ Startup Health Check: READY');
     }
 
     // Initialize Socket.IO server

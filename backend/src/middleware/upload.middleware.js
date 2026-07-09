@@ -17,6 +17,42 @@ const upload = multer({
 });
 
 /**
+ * Validates file magic bytes to verify integrity and prevent disguised executables.
+ * 
+ * @param {Buffer} buffer - File buffer contents
+ * @param {string} mimeType - Declared mime type
+ * @returns {boolean} True if magic bytes are valid
+ */
+export function checkMagicBytes(buffer, mimeType) {
+  if (!buffer || buffer.length < 4) return false;
+  const hex = buffer.toString('hex', 0, 4).toUpperCase();
+
+  if (mimeType === 'application/pdf') {
+    return hex === '25504446'; // %PDF
+  }
+  if (mimeType === 'image/png') {
+    return hex === '89504E47'; // PNG header
+  }
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+    return hex.startsWith('FFD8FF'); // JPEG SOI
+  }
+  if (
+    mimeType === 'application/zip' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ) {
+    return hex.startsWith('504B'); // PK ZIP header
+  }
+  if (mimeType === 'text/csv' || mimeType === 'text/plain') {
+    // Verify it is not a binary executable masquerading as text
+    const sample = buffer.toString('utf8', 0, Math.min(buffer.length, 100));
+    return !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(sample);
+  }
+  return true;
+}
+
+/**
  * Validates file constraints (name, extension, type, size) inside the upload middleware pipeline.
  * 
  * @function validateUploadedFile
@@ -47,6 +83,11 @@ function validateUploadedFile(file, bucketName = STORAGE_BUCKETS.DOCUMENTS) {
   // 4. Validate file size
   if (!validateFileSize(file.size, bucketName)) {
     throw new Error(`File size is too large for the target bucket. File size: ${file.size} bytes.`);
+  }
+
+  // 5. Verify magic byte integrity
+  if (!checkMagicBytes(file.buffer, file.mimetype)) {
+    throw new Error(`Security Exception: Magic byte signature check failed for file "${file.originalname}" of type "${file.mimetype}". File header tampered or format invalid.`);
   }
 }
 

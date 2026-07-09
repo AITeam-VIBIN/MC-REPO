@@ -20,24 +20,25 @@ function getPrismaInstance() {
           url: env.DATABASE_URL,
         },
       },
-      // Logs raw SQL queries and warnings only during local development runs
-      log: isDev 
-        ? [
-            { emit: 'event', level: 'query' },
-            { emit: 'stdout', level: 'error' },
-            { emit: 'stdout', level: 'warn' }
-          ]
-        : [
-            { emit: 'stdout', level: 'error' }
-          ],
+      log: [
+        { emit: 'event', level: 'query' },
+        { emit: 'stdout', level: 'error' },
+        { emit: 'stdout', level: 'warn' }
+      ],
     });
 
-    // Handle query logging telemetry in development environment
-    if (isDev) {
-      prismaInstance.$on('query', (event) => {
+    const SLOW_QUERY_MS = 500;
+
+    prismaInstance.$on('query', (event) => {
+      if (isDev) {
         console.log(`[Database Query] SQL: ${event.query} | Duration: ${event.duration}ms`);
-      });
-    }
+      }
+      if (event.duration > SLOW_QUERY_MS) {
+        import('../utils/performance.util.js').then(({ slowQueryDetected }) => {
+          slowQueryDetected(event.query, event.duration);
+        }).catch(() => {});
+      }
+    });
   }
 
   return prismaInstance;

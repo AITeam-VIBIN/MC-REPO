@@ -94,14 +94,8 @@ async function processReportJob(job) {
   if (job.name === 'generate-compliance-report') {
     const { ReportService } = await import('../services/report.service.js');
     const reportService = new ReportService();
-    const { reportType, format, filters, requestedBy } = job.data;
-    const result = await reportService.generateAndStoreReportFile(
-      job.id,
-      reportType,
-      format,
-      filters,
-      requestedBy
-    );
+    const { reportId } = job.data;
+    const result = await reportService.generateReport(reportId || job.id);
     return result;
   }
 }
@@ -118,6 +112,11 @@ async function processSchedulerJob(job) {
     } else if (job.name === 'cleanup-preparation') {
       const summary = await lifecycleService.runCleanupPreparation();
       console.log(`[Scheduler Worker] cleanup-preparation result:`, summary);
+    } else if (job.name === 'scheduled-reports-scan') {
+      const { SchedulerService } = await import('../services/scheduler.service.js');
+      const schedulerService = new SchedulerService();
+      const summary = await schedulerService.processPendingSchedules();
+      console.log(`[Scheduler Worker] scheduled-reports-scan result:`, summary);
     } else {
       console.log(`[Scheduler Worker] Unrecognized schedule job name: ${job.name}`);
     }

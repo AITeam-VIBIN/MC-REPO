@@ -1,5 +1,8 @@
 import { DeviceResponseDto, ActivityResponseDto, SessionResponseDto, PermissionResponseDto } from '../services/security.service.js';
 import { RoleResponseDto } from '../roles/roles.service.js';
+import bcrypt from 'bcrypt';
+import logUtil from './logger.util.js';
+import { prisma } from '../config/database.js';
 
 /**
  * Mapper utility to transform raw user session records into sanitized DeviceResponseDto objects.
@@ -103,6 +106,82 @@ export function permissionMapper(rawPermissionRecord) {
   return PermissionResponseDto.fromRecord(rawPermissionRecord);
 }
 
+/**
+ * Validates password complexity strength.
+ * Enforces: At least 8 characters, 1 uppercase, 1 lowercase, 1 number, and 1 special symbol.
+ * 
+ * @param {string} password - Raw user password
+ * @returns {boolean} True if complexity satisfies criteria
+ */
+export function validatePasswordStrength(password) {
+  if (typeof password !== 'string' || password.length < 8) {
+    return false;
+  }
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  return hasUpper && hasLower && hasNumber && hasSpecial;
+}
+
+/**
+ * Hashes passwords using bcrypt with strict salt cost.
+ */
+export async function hashPassword(password, saltRounds = 12) {
+  return bcrypt.hash(password, saltRounds);
+}
+
+/**
+ * Compares passwords with bcrypt hashes.
+ */
+export async function comparePassword(password, hash) {
+  return bcrypt.compare(password, hash);
+}
+
+/**
+ * Event hook recording detected security policy violations to standard logs & audit engines.
+ */
+export async function securityViolationDetected(userId, violationType, description, req = null) {
+  logUtil.error(`[Security Violation] User: ${userId || 'GUEST'} | Type: ${violationType} | Desc: ${description}`, null, {
+    userId,
+    violationType,
+    ipAddress: req?.ip,
+    userAgent: req?.headers?.['user-agent'],
+  });
+
+  try {
+    // Generate audit entry
+    await prisma.auditLog.create({
+      data: {
+        eventRef: `SEC-VIO-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+        userId: userId || null,
+        userSnapshot: userId ? 'Security Audit Alert' : 'Anonymous Guest',
+        category: 'SECURITY',
+        action: 'DELETE', // Map to general action category
+        eventType: violationType,
+        description,
+        ipAddress: req?.ip || null,
+        userAgent: req?.headers?.['user-agent'] || null,
+        result: 'DENIED',
+      },
+    });
+  } catch (err) {
+    logUtil.error('Failed writing security violation to audit trail:', err);
+  }
+}
+
+/**
+ * Event hook recording suspicious activities or rapid access triggers.
+ */
+export async function suspiciousActivityDetected(userId, activityType, description, req = null) {
+  logUtil.warn(`[Suspicious Activity] User: ${userId || 'GUEST'} | Type: ${activityType} | Desc: ${description}`, {
+    userId,
+    activityType,
+    ipAddress: req?.ip,
+    userAgent: req?.headers?.['user-agent'],
+  });
+}
+
 export default {
   deviceMapper,
   activityMapper,
@@ -110,4 +189,9 @@ export default {
   parseUserAgent,
   sessionMapper,
   permissionMapper,
+  validatePasswordStrength,
+  hashPassword,
+  comparePassword,
+  securityViolationDetected,
+  suspiciousActivityDetected,
 };
