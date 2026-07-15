@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { KeyRound, Mail, ShieldAlert, ArrowRight, Sparkles, LogIn, Laptop, FileDigit } from "lucide-react";
 import { User, UserRole } from "../types";
+import mitconLogo from "../assets/logo.png";
 
 interface LoginPageProps {
   onSuccess: (user: User, token: string) => void;
@@ -13,19 +14,6 @@ export default function LoginPage({ onSuccess, mfaDefaultSetting }: LoginPagePro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Quick Account Select list matching specs
-  const demoAccounts = [
-    { name: "Sarah Jenkins", email: "super1@bitcoin-credentials.org", role: "super-admin", label: "Super Admin [Full Access]" },
-    { name: "Michael Chang", email: "admin1@bitcoin-credentials.org", role: "admin", label: "Admin [Approvals & Logs]" },
-    { name: "Robert Downey", email: "user1@bitcoin-credentials.org", role: "user", label: "Standard Employee" },
-    { name: "Satoshi Nakamoto", email: "dev1@bitcoin-credentials.org", role: "developer", label: "Developer [API & Backup]" },
-  ];
-
-  const handleQuickChoose = (account: typeof demoAccounts[0]) => {
-    setEmail(account.email);
-    setPassword("password123");
-    setError(null);
-  };
 
   const handleInitialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,19 +50,14 @@ export default function LoginPage({ onSuccess, mfaDefaultSetting }: LoginPagePro
       <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,rgba(249,115,22,0.08),transparent_50%),radial-gradient(ellipse_at_bottom_left,rgba(59,130,246,0.08),transparent_50%)] pointer-events-none" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative">
-        <div className="flex justify-center items-center gap-3">
-          <div className="bg-gradient-to-tr from-amber-500 to-orange-600 p-2.5 rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.2)]">
-            <FileDigit className="w-8 h-8 text-white stroke-[1.5]" />
-          </div>
-          <span className="text-2xl font-bold font-display tracking-tight text-white">
-            BCD-FSS <span className="text-amber-500 font-extrabold font-serif">₿</span>
-          </span>
+        <div className="flex justify-center items-center">
+          <img src={mitconLogo} className="h-16 w-auto" alt="Mitcon Credentia Logo" />
         </div>
         <h2 className="mt-6 text-center text-3xl font-display font-bold tracking-tight text-white">
           Secure Core Repository
         </h2>
         <p className="mt-2 text-center text-sm text-slate-400">
-          Bitcoin Credential Digital File Storage System
+          Module Tracker
         </p>
       </div>
 
@@ -143,41 +126,6 @@ export default function LoginPage({ onSuccess, mfaDefaultSetting }: LoginPagePro
             </div>
           </form>
 
-          {/* QUICK CHOOSE PANEL FOR PREVIEWING */}
-          <div className="mt-8 pt-6 border-t border-slate-700/50">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-3.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Organizational Role Bypass
-            </h3>
-            <div className="grid grid-cols-1 gap-2">
-              {demoAccounts.map((acct) => (
-                <button
-                  key={acct.email}
-                  type="button"
-                  onClick={() => handleQuickChoose(acct)}
-                  className={`w-full text-left p-2.5 bg-slate-900/60 hover:bg-slate-900 hover:border-slate-600 rounded-xl border text-xs transition-all flex items-center justify-between ${
-                    email === acct.email ? "border-amber-500 bg-slate-900" : "border-slate-800"
-                  }`}
-                >
-                  <div>
-                    <p className="font-semibold text-slate-200">{acct.name}</p>
-                    <p className="text-[10px] text-slate-500 font-mono">{acct.email}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                    acct.role === "super-admin" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                    acct.role === "admin" ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" :
-                    acct.role === "developer" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" :
-                    "bg-slate-500/10 text-slate-400 border border-slate-800"
-                  }`}>
-                    {acct.role}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <p className="mt-3.5 text-[10px] text-slate-600 text-center flex items-center justify-center gap-1">
-              <Laptop className="w-3 h-3" /> Audit log will trace your physical coordinates automatically.
-            </p>
-          </div>
 
         </div>
       </div>

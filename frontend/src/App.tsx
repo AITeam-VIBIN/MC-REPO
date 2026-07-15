@@ -11,8 +11,8 @@ import RepoManager from "./components/RepoManager";
 import CheckoutReturn from "./components/CheckoutReturn";
 import UserManager from "./components/UserManager";
 import ReportModule from "./components/ReportModule";
-import BackupRestore from "./components/BackupRestore";
 import NotificationCenter from "./components/NotificationCenter";
+import mitconLogo from "./assets/logo.png";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(() => {
@@ -39,6 +39,13 @@ export default function App() {
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [policies, setPolicies] = useState<SecurityPolicy | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
 
   // Cross tab selectors state
   const [selectedDocForCheckout, setSelectedDocForCheckout] = useState<Document | null>(null);
@@ -128,12 +135,19 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    if (!window.confirm("Verify: Are you sure you want to sign out of BCD-FSS Secure Vault?")) return;
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem("bcd_user");
-    localStorage.removeItem("bcd_token");
-    localStorage.removeItem("bcd_active_tab");
+    setConfirmModal({
+      isOpen: true,
+      title: "Confirm Sign Out",
+      message: "Verify: Are you sure you want to sign out of BCD-FSS Secure Vault?",
+      onConfirm: () => {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem("bcd_user");
+        localStorage.removeItem("bcd_token");
+        localStorage.removeItem("bcd_active_tab");
+        setConfirmModal(null);
+      }
+    });
   };
 
   const notifyMarkRead = async (id: string) => {
@@ -178,14 +192,9 @@ export default function App() {
 
           {/* LOGO AREA */}
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-tr from-amber-500 to-amber-600 p-1.5 rounded-lg shadow-md shrink-0">
-              <FileDigit className="w-5.5 h-5.5 text-white stroke-[1.5]" />
-            </div>
+            <img src={mitconLogo} className="h-9 w-auto" alt="Mitcon Credentia Logo" />
             <div>
-              <span className="font-bold text-lg font-display tracking-tight text-white flex items-center gap-1 leading-none">
-                BCD-FSS <span className="text-amber-500 font-serif font-extrabold">₿</span>
-              </span>
-              <p className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase">Secure Credential Digital Storage</p>
+              <p className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">Module Tracker</p>
             </div>
           </div>
 
@@ -286,16 +295,6 @@ export default function App() {
             <span>Compliance Reports</span>
           </button>
 
-          {(user.role === "developer" || user.role === "super-admin") && (
-            <button
-              onClick={() => setActiveTab("recovery")}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${activeTab === "recovery" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-            >
-              <Database className="w-4 h-4 shrink-0" />
-              <span>Recovery panel DB</span>
-            </button>
-          )}
 
         </div>
       </nav>
@@ -361,12 +360,6 @@ export default function App() {
           />
         )}
 
-        {activeTab === "recovery" && (
-          <BackupRestore
-            currentUser={user}
-            onRefreshAll={fetchAllData}
-          />
-        )}
 
       </main>
 
@@ -375,6 +368,51 @@ export default function App() {
         © 2026 Bitcoin Credential Digital File Storage System (BCD-FSS). Secure Node Status: Active & Official
       </footer>
 
+      {/* Reusable Custom Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative overflow-hidden dark-glass transform scale-100 transition-all duration-200">
+            {/* Background design accents */}
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full filter blur-xl pointer-events-none" />
+            
+            {/* Header info */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">{confirmModal.title}</h3>
+                <p className="text-[10px] text-slate-500 font-mono">BCD-FSS CRYPTO SECURITY</p>
+              </div>
+            </div>
+
+            {/* Message content */}
+            <p className="text-xs text-slate-300 mb-6 leading-relaxed">
+              {confirmModal.message}
+            </p>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-2xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-semibold rounded-2xl shadow-lg shadow-orange-500/20 transition-all"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
+
   );
 }
