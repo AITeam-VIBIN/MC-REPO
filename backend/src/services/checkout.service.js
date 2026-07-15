@@ -488,5 +488,71 @@ export class CheckoutService {
 
     return await this.checkoutRepo.fetchMovementTimeline(checkoutId);
   }
+
+  /**
+   * Return document and close checkout lock.
+   */
+  async returnCheckout(checkoutId, data, user) {
+    const checkout = await this.checkoutRepo.findById(checkoutId);
+    if (!checkout) {
+      throw new CheckoutServiceError('Checkout record was not found.', 'CHECKOUT_NOT_FOUND');
+    }
+
+    if (checkout.status !== 'CHECKED_OUT' && checkout.status !== 'PENDING_RETURN') {
+      throw new CheckoutServiceError('Only active checked out items can be returned.', 'INVALID_STATUS');
+    }
+
+    // Map condition to Prisma enum
+    let mappedCondition = 'GOOD';
+    const cond = (data.condition || '').toLowerCase();
+    if (cond.includes('damage')) {
+      mappedCondition = 'DAMAGED';
+    } else if (cond.includes('missing')) {
+      mappedCondition = 'MISSING';
+    } else if (cond.includes('review') || cond.includes('digital') || cond.includes('copy')) {
+      mappedCondition = 'NEEDS_REVIEW';
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1. Update checkout record
+      const updatedCheckout = await tx.checkout.update({
+        where: { id: checkoutId },
+        data: {
+          status: 'RETURNED',
+          returnStatus: 'RETURN_RECEIVED',
+          returnedDate: new Date(),
+          returnedTo: user.email.split('@')[0],
+          conditionOnReturn: mappedCondition,
+          returnNotes: data.notes || '',
+        }
+      });
+
+      // 2. Unlock the document
+      await tx.document.update({
+        where: { id: checkout.documentId },
+        data: {
+          isLocked: false,
+          lockedById: null,
+          lockedAt: null,
+          status: 'ACTIVE',
+        }
+      });
+
+      // 3. Create a CheckoutMovement entry for completion
+      await tx.checkoutMovement.create({
+        data: {
+          checkoutId,
+          documentId: checkout.documentId,
+          currentLocation: 'Secure Repository Vault',
+          status: 'COMPLETED',
+          notes: `Document returned in ${data.condition || 'Perfect'} condition. Notes: ${data.notes || 'None'}`
+        }
+      });
+
+      return updatedCheckout;
+    });
+
+    return updated;
+  }
 }
 export default CheckoutService;

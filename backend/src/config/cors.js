@@ -6,17 +6,11 @@ const whitelist = env.CORS_ORIGINS
   : ['http://localhost:3000'];
 
 export const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or postman)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    if (whitelist.includes(origin)) {
+  origin: function (origin, callback) {
+    if (!origin || whitelist.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.warn(`[CORS Blocked] Origin: ${origin} not allowed by whitelist.`);
-      callback(new Error('Not allowed by CORS policy'));
+      callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

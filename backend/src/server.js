@@ -97,8 +97,6 @@ process.on('uncaughtException', (error) => {
  */
 async function startBootstrap() {
   try {
-    console.log('Initializing MITCON BCD-FSS application bootstrap...');
-
     let dbReady = false;
     let redisReady = false;
     let storageReady = false;
@@ -106,7 +104,6 @@ async function startBootstrap() {
     // Verify Prisma database connection
     try {
       await prisma.$queryRaw`SELECT 1`;
-      console.log('Database connection tested successfully.');
       dbReady = true;
     } catch (dbErr) {
       console.error('❌ Database connection failed:', dbErr.message);
@@ -115,7 +112,6 @@ async function startBootstrap() {
     // Verify Redis connection client gracefully
     try {
       await redis.ping();
-      console.log('Redis Cache connection verified.');
       redisReady = true;
     } catch (redisErr) {
       console.warn('⚠️ Redis Cache connection failed. Background job workers may be offline.');
@@ -125,7 +121,6 @@ async function startBootstrap() {
     try {
       const { data, error } = await supabaseAdmin.storage.listBuckets();
       if (error) throw error;
-      console.log('Supabase Storage connection verified.');
       storageReady = true;
     } catch (storageErr) {
       console.warn('⚠️ Supabase Storage connection failed:', storageErr.message);
@@ -138,17 +133,12 @@ async function startBootstrap() {
       if (NODE_ENV === 'production') {
         process.exit(1);
       }
-    } else {
-      console.log('✅ Startup Health Check: READY');
     }
 
     // Initialize Socket.IO server
     initSocketServer(server);
 
-    server.listen(PORT, () => {
-      console.log(`🚀 System successfully booted in [${NODE_ENV}] mode`);
-      console.log(`API endpoint available at: http://localhost:${PORT}`);
-    });
+    server.listen(PORT);
   } catch (err) {
     console.error('❌ Critical bootstrap initiation failure:', err);
     process.exit(1);

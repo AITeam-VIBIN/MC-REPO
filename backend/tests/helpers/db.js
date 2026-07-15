@@ -9,27 +9,12 @@ import { prisma } from '../../src/config/database.js';
  */
 export async function cleanupDb() {
   try {
-    await prisma.reportHistory.deleteMany({});
-    await prisma.report.deleteMany({});
-    await prisma.scheduledReport.deleteMany({});
-    await prisma.notificationDelivery.deleteMany({});
-    await prisma.notificationPreference.deleteMany({});
-    await prisma.notification.deleteMany({});
-    await prisma.auditLog.deleteMany({});
-    await prisma.signatureHistory.deleteMany({});
-    await prisma.digitalSignature.deleteMany({});
-    await prisma.checkoutMovement.deleteMany({});
+    await prisma.return.deleteMany({});
     await prisma.checkout.deleteMany({});
-    await prisma.approvalHistory.deleteMany({});
-    await prisma.approvalStep.deleteMany({});
-    await prisma.approvalRequest.deleteMany({});
-    await prisma.fileVersion.deleteMany({});
     await prisma.document.deleteMany({});
-    await prisma.folderPermission.deleteMany({});
-    await prisma.folder.deleteMany({});
-    await prisma.vault.deleteMany({});
+    await prisma.notification.deleteMany({});
+    await prisma.securityPolicy.deleteMany({});
     await prisma.user.deleteMany({});
-    await prisma.department.deleteMany({});
   } catch (err) {
     console.error('[DB Cleanup Error]:', err);
   }

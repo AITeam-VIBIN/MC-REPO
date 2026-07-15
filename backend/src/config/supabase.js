@@ -90,7 +90,6 @@ export function getSupabaseAnonClient() {
         autoRefreshToken: false,
       },
     });
-    console.log('Supabase Anon Client singleton initialized.');
   }
   return supabaseAnonInstance;
 }
@@ -112,7 +111,6 @@ export function getSupabaseAdminClient() {
         autoRefreshToken: false,
       },
     });
-    console.log('Supabase Admin Client singleton initialized.');
   }
   return supabaseAdminInstance;
 }

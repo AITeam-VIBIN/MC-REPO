@@ -7,6 +7,7 @@ function rateLimitErrorHandler(message) {
   return (req, res, next, options) => {
     res.status(options.statusCode).json({
       success: false,
+      message, // Expose at root level for frontend fallback compatibility
       error: {
         code: 'RATE_LIMIT_EXCEEDED',
         message,
@@ -17,11 +18,11 @@ function rateLimitErrorHandler(message) {
 }
 
 /**
- * General API Limiter. Limit each IP to 100 requests per 15 minutes.
+ * General API Limiter. Limit each IP to 10000 requests per 15 minutes to support frequent polling.
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 10000,
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitErrorHandler('Too many requests, please try again after 15 minutes.'),
