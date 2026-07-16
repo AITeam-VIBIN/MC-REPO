@@ -24,7 +24,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -64,6 +64,9 @@ jobs:
         run: |
           cd backend
           npx prisma generate
+
+      - name: Wait for PostgreSQL
+        run: npx wait-on tcp:localhost:5432 --timeout 60000
 
       - name: Run Database Migrations
         env:
