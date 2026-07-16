@@ -1,4 +1,4 @@
-import env from './env.js';
+import { env, config } from './env.js';
 import prisma from './database.js';
 import { supabaseAnon, supabaseAdmin, STORAGE_BUCKETS } from './supabase.js';
 import redis from './redis.js';
@@ -11,7 +11,7 @@ import { securityConfig } from './security.js';
  * 
  * @type {Readonly<Object>}
  */
-export const config = env;
+export { config, env };
 
 export {
   prisma,

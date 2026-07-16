@@ -406,5 +406,23 @@ export class CheckoutController {
       mapServiceErrorToHttp(err, res, next);
     }
   }
+
+  /**
+   * Return document checked out.
+   */
+  async returnCheckout(req, res, next) {
+    try {
+      const { id } = req.params;
+      const result = await checkoutService.returnCheckout(id, req.body, req.user);
+
+      res.status(200).json({
+        success: true,
+        message: 'Document successfully returned and lock released.',
+        data: result,
+      });
+    } catch (err) {
+      mapServiceErrorToHttp(err, res, next);
+    }
+  }
 }
 export default CheckoutController;

@@ -1,192 +1,140 @@
 import { Router } from 'express';
-import { CheckoutController } from '../controllers/checkout.controller.js';
-import { requireAuth, requireSession, requirePermission } from '../middleware/index.js';
-import {
-  createCheckoutSchema,
-  updateCheckoutSchema,
-  listCheckoutsSchema,
-  idParamSchema,
-  createMovementSchema,
-  updateLocationSchema
-} from '../validations/checkout.validation.js';
+import { prisma } from '../config/database.js';
+import { getIO } from '../config/socket.js';
 
 const router = Router();
-const checkoutController = new CheckoutController();
 
-// Validation Middleware Helper
-const validate = (schema) => (req, res, next) => {
+router.get('/checkouts', async (req, res) => {
   try {
-    if (schema === idParamSchema) {
-      schema.parse(req.params);
-    } else {
-      schema.parse({
-        body: req.body,
-        query: req.query,
-        params: req.params,
-      });
-    }
-    next();
-  } catch (error) {
-    next(error);
+    const checkouts = await prisma.checkout.findMany();
+    res.status(200).json(checkouts);
+  } catch (err) {
+    console.error("Error fetching checkouts from PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to read checkouts." });
   }
-};
+});
 
-// All checkout endpoints require authentication and an active session
-router.use(requireAuth);
-router.use(requireSession);
+router.post('/checkouts', async (req, res) => {
+  const body = req.body;
+  try {
+    const doc = await prisma.document.findUnique({ where: { id: body.documentDbId } });
+    if (!doc) {
+      return res.status(404).json({ message: "Document not found." });
+    }
 
-/**
- * @openapi
- * /checkouts:
- *   post:
- *     summary: Submit checkout request
- *     description: Submits a new document checkout request for approval.
- *     security:
- *       - BearerAuth: []
- */
-router.post('/', requirePermission('CHECKOUT_CREATE'), validate(createCheckoutSchema), checkoutController.createCheckout);
+    const newCheckout = await prisma.checkout.create({
+      data: {
+        id: `chk-${Date.now()}`,
+        documentId: doc.documentId,
+        documentDbId: doc.id,
+        documentName: doc.documentName,
+        employeeName: body.employeeName,
+        employeeId: body.employeeId,
+        designation: body.designation,
+        checkoutDate: new Date().toISOString().split('T')[0],
+        destination: body.destination,
+        purpose: body.purpose,
+        expectedReturnDate: body.expectedReturnDate,
+        approvalAuthority: body.approvalAuthority || "Self Check",
+        status: "Checked Out",
+        signature: body.signature,
+        signatureType: body.signatureType
+      }
+    });
 
-/**
- * @openapi
- * /checkouts:
- *   get:
- *     summary: List checkouts
- *     description: Retrieves list of checkouts matching filters.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/', requirePermission('CHECKOUT_VIEW'), validate(listCheckoutsSchema), checkoutController.listCheckouts);
+    await prisma.document.update({
+      where: { id: doc.id },
+      data: { status: "Checked Out" }
+    });
 
-/**
- * @openapi
- * /checkouts/my:
- *   get:
- *     summary: List my checkouts
- *     description: Retrieves the current user's checkouts list.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/my', requirePermission('CHECKOUT_VIEW'), validate(listCheckoutsSchema), checkoutController.listMyCheckouts);
+    // Notify admins
+    const notification = await prisma.notification.create({
+      data: {
+        id: `not-${Date.now()}`,
+        title: "Document Checked Out",
+        message: `${newCheckout.employeeName} checked out document ${newCheckout.documentId} (${newCheckout.documentName}) for ${newCheckout.destination}.`,
+        status: "unread",
+        timestamp: new Date()
+      }
+    });
 
-/**
- * @openapi
- * /checkouts/pending:
- *   get:
- *     summary: List pending approvals
- *     description: Retrieves list of checkouts awaiting administrator approval.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/pending', requirePermission('CHECKOUT_MANAGE'), validate(listCheckoutsSchema), checkoutController.listPendingCheckouts);
+    const io = getIO();
+    if (io) {
+      io.emit('notification:new', notification);
+    }
 
-/**
- * @openapi
- * /checkouts/active:
- *   get:
- *     summary: List active checkouts
- *     description: Retrieves list of checkouts currently checked out.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/active', requirePermission('CHECKOUT_MANAGE'), validate(listCheckoutsSchema), checkoutController.listActiveCheckouts);
+    res.status(200).json(newCheckout);
+  } catch (err) {
+    console.error("Error creating checkout in PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to perform checkout." });
+  }
+});
 
-/**
- * @openapi
- * /checkouts/overdue:
- *   get:
- *     summary: List overdue checkouts
- *     description: Retrieves list of overdue checked out checkouts.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/overdue', requirePermission('CHECKOUT_MANAGE'), validate(listCheckoutsSchema), checkoutController.listOverdueCheckouts);
+router.post('/checkouts/:id/return', async (req, res) => {
+  const { id } = req.params;
+  const body = req.body;
+  try {
+    const checkout = await prisma.checkout.findUnique({ where: { id } });
+    if (!checkout) {
+      return res.status(404).json({ message: "Checkout record not found." });
+    }
 
-/**
- * @openapi
- * /checkouts/{id}:
- *   get:
- *     summary: Fetch checkout details
- *     description: Retrieves full metadata details of a checkout.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id', requirePermission('CHECKOUT_VIEW'), validate(idParamSchema), checkoutController.getCheckoutDetails);
+    const updatedCheckout = await prisma.checkout.update({
+      where: { id },
+      data: { status: "Returned" }
+    });
 
-/**
- * @openapi
- * /checkouts/{id}:
- *   post:
- *     summary: Update checkout request
- *     description: Updates editable fields on a draft or pending checkout request.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id', requirePermission('CHECKOUT_UPDATE'), validate(updateCheckoutSchema), checkoutController.updateCheckout);
+    await prisma.document.update({
+      where: { id: checkout.documentDbId },
+      data: { status: "Available" }
+    });
 
-/**
- * @openapi
- * /checkouts/{id}/cancel:
- *   patch:
- *     summary: Cancel checkout request
- *     description: Cancels a pending or draft checkout request.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id/cancel', requirePermission('CHECKOUT_CANCEL'), validate(idParamSchema), checkoutController.cancelCheckout);
+    await prisma.return.create({
+      data: {
+        id: `ret-${Date.now()}`,
+        checkoutId: checkout.id,
+        documentId: checkout.documentId,
+        documentName: checkout.documentName,
+        returnDate: new Date().toISOString().split('T')[0],
+        returnTime: new Date().toLocaleTimeString(),
+        condition: body.condition || "Perfect",
+        notes: body.notes || "",
+        returningEmployeeSignature: body.returningEmployeeSignature,
+        returningEmployeeName: body.returningEmployeeName
+      }
+    });
 
-/**
- * @openapi
- * /checkouts/{id}:
- *   delete:
- *     summary: Soft delete checkout record
- *     description: Soft deletes a checkout record.
- *     security:
- *       - BearerAuth: []
- */
-router.delete('/:id', requirePermission('CHECKOUT_MANAGE'), validate(idParamSchema), checkoutController.deleteCheckout);
+    // Notify admins
+    const notification = await prisma.notification.create({
+      data: {
+        id: `not-${Date.now()}`,
+        title: "Document Returned",
+        message: `${body.returningEmployeeName} checked in/returned document ${checkout.documentId} (${checkout.documentName}).`,
+        status: "unread",
+        timestamp: new Date()
+      }
+    });
 
-/**
- * @openapi
- * /checkouts/{id}/movements:
- *   post:
- *     summary: Record physical movement event
- *     description: Creates a physical document movement tracking event.
- *     security:
- *       - BearerAuth: []
- */
-router.post('/:id/movements', requirePermission('CHECKOUT_UPDATE'), validate(createMovementSchema), checkoutController.createMovement);
+    const io = getIO();
+    if (io) {
+      io.emit('notification:new', notification);
+    }
 
-/**
- * @openapi
- * /checkouts/{id}/movements:
- *   get:
- *     summary: Get movement history
- *     description: Retrieves chronological logs of physical movements.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id/movements', requirePermission('CHECKOUT_VIEW'), validate(idParamSchema), checkoutController.getMovementHistory);
+    res.status(200).json(updatedCheckout);
+  } catch (err) {
+    console.error("Error execution return in PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to perform return." });
+  }
+});
 
-/**
- * @openapi
- * /checkouts/{id}/timeline:
- *   get:
- *     summary: Get chronological timeline
- *     description: Retreives unified timeline logs (request, approval, physical custody events).
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id/timeline', requirePermission('CHECKOUT_VIEW'), validate(idParamSchema), checkoutController.getMovementTimeline);
-
-/**
- * @openapi
- * /checkouts/{id}/location:
- *   patch:
- *     summary: Update location directly
- *     description: Updates current location parameter directly on checkout.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id/location', requirePermission('CHECKOUT_UPDATE'), validate(updateLocationSchema), checkoutController.updateLocation);
+router.get('/returns', async (req, res) => {
+  try {
+    const returns = await prisma.return.findMany();
+    res.status(200).json(returns);
+  } catch (err) {
+    console.error("Error fetching returns from PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to read returns." });
+  }
+});
 
 export default router;

@@ -136,21 +136,11 @@ export class ReportService {
     // Validate and enforce role based filters access
     if (user.role === 'ADMIN') {
       // Super Admin: allows arbitrary filtering
-    } else if (user.role === 'EDITOR') {
+    } else {
       // Admin/Editor: Restrict report to their own department
       if (targetFilters.department && targetFilters.department !== userDept) {
         throw new ReportServiceError('Access denied: EDITOR can only generate reports for their own department.', 'ACCESS_DENIED');
       }
-      targetFilters.department = userDept;
-    } else {
-      // VIEWER: Restrict to their own user ID and department
-      if (targetFilters.userId && targetFilters.userId !== user.id) {
-        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own activity.', 'ACCESS_DENIED');
-      }
-      if (targetFilters.department && targetFilters.department !== userDept) {
-        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own department.', 'ACCESS_DENIED');
-      }
-      targetFilters.userId = user.id;
       targetFilters.department = userDept;
     }
 
@@ -240,63 +230,78 @@ export class ReportService {
       // 1. Gather filtered dataset via repositories aggregation routing
       const dataset = await this.collectReportData(report.type, report.filters);
 
-      // 2. Build PDF Document
+      let fileInfo;
+      let contentType;
+
       if (report.format === 'PDF') {
         const { PDFService } = await import('./pdf.service.js');
         const pdfService = new PDFService();
-        
         const pdfInfo = await pdfService.generateReportPDF(report, dataset);
-
-        // Target upload path
-        const date = new Date();
-        const year = date.getFullYear().toString();
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const filename = pdfInfo.fileName || `report_${Date.now()}.pdf`;
-        const fileRef = `reports/audit/${year}/${month}/${report.id}/${filename}`;
-
-        // Upload physical file to Supabase/S3 Private Storage bucket
-        await StorageService.uploadObject('documents', fileRef, pdfInfo.buffer, {
-          contentType: 'application/pdf',
-          cacheControl: '300',
-        });
-
-        // Calculate metrics
-        const completedAt = new Date();
-        const startedTime = report.startedAt ? new Date(report.startedAt) : new Date();
-        const processingTime = completedAt.getTime() - startedTime.getTime();
-
-        // Persist Generated file info
-        const updatedReport = await this.reportRepository.updateGeneratedFileInfo(reportId, {
-          storageProvider: 'SUPABASE',
-          bucketName: 'documents',
-          filePath: fileRef,
-          fileName: filename,
-          fileSize: pdfInfo.fileSize,
-          fileHash: pdfInfo.fileHash,
-          generatedAt: completedAt,
-          expiryDate: new Date(Date.now() + 30 * 24 * 3600 * 1000), // 30 days retention expiry
-        });
-
-        // Mark COMPLETED
-        const finalizedReport = await this.reportRepository.updateReportStatus(reportId, 'COMPLETED', {
-          completedAt,
-          processingTime,
-        });
-
-        await this.reportRepository.createHistoryEntry({
-          reportId,
-          action: 'GENERATED',
-          performedBy: 'System Engine',
-          metadata: { filePath: fileRef },
-        });
-
-        // Trigger integrations hooks placeholder
-        this.reportGenerated(finalizedReport);
-
-        return reportUtil.formatReportResponse(finalizedReport);
+        fileInfo = pdfInfo;
+        contentType = 'application/pdf';
+      } else if (report.format === 'EXCEL' || report.format === 'CSV') {
+        const { ExportService } = await import('./export.service.js');
+        const exportService = new ExportService();
+        const exportInfo = await exportService.generateReportExport(report, dataset);
+        fileInfo = exportInfo;
+        contentType = exportInfo.mimeType;
       } else {
         throw new ReportServiceError(`Format ${report.format} generation is not supported yet.`, 'UNSUPPORTED_FORMAT');
       }
+
+      // Target upload path
+      const date = new Date();
+      const year = date.getFullYear().toString();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const filename = fileInfo.fileName || `report_${Date.now()}.${report.format === 'PDF' ? 'pdf' : (report.format === 'EXCEL' ? 'xlsx' : 'csv')}`;
+      const fileRef = `reports/audit/${year}/${month}/${report.id}/${filename}`;
+
+      // Upload physical file to Supabase/S3 Private Storage bucket
+      await StorageService.uploadObject('documents', fileRef, fileInfo.buffer, {
+        contentType,
+        cacheControl: '300',
+      });
+
+      // Calculate metrics
+      const completedAt = new Date();
+      const startedTime = report.startedAt ? new Date(report.startedAt) : new Date();
+      const processingTime = completedAt.getTime() - startedTime.getTime();
+
+      // Persist Generated file info
+      const updatedReport = await this.reportRepository.updateGeneratedFileInfo(reportId, {
+        storageProvider: 'SUPABASE',
+        bucketName: 'documents',
+        filePath: fileRef,
+        fileName: filename,
+        fileSize: fileInfo.fileSize,
+        fileHash: fileInfo.fileHash,
+        generatedAt: completedAt,
+        expiryDate: new Date(Date.now() + 30 * 24 * 3600 * 1000), // 30 days retention expiry
+      });
+
+      // Mark COMPLETED
+      const finalizedReport = await this.reportRepository.updateReportStatus(reportId, 'COMPLETED', {
+        completedAt,
+        processingTime,
+      });
+
+      await this.reportRepository.createHistoryEntry({
+        reportId,
+        action: 'GENERATED',
+        performedBy: 'System Engine',
+        metadata: { filePath: fileRef },
+      });
+
+      // Trigger integrations hooks placeholder
+      if (report.format === 'PDF') {
+        this.reportGenerated(finalizedReport);
+      } else if (report.format === 'EXCEL') {
+        this.excelGenerated(finalizedReport);
+      } else if (report.format === 'CSV') {
+        this.csvGenerated(finalizedReport);
+      }
+
+      return reportUtil.formatReportResponse(finalizedReport);
     } catch (error) {
       console.error(`[ReportService] Failure during report compilation:`, error);
       
@@ -345,20 +350,12 @@ export class ReportService {
     const dbUser = await this.reportRepository.getUserWithDepartment(user.id);
     const userDept = dbUser?.department?.name || null;
 
-    // EDITOR can access reports within their own department or their own creations
-    if (user.role === 'EDITOR') {
-      if (report.departmentSnapshot === userDept || report.userId === user.id) {
-        return reportUtil.formatReportResponse(report);
-      }
-      throw new ReportServiceError('Access denied: Department scope mismatch.', 'FORBIDDEN');
-    }
-
-    // VIEWER can only access their own reports
-    if (report.userId === user.id) {
+    // EDITOR/Default can access reports within their own department or their own creations
+    if (report.departmentSnapshot === userDept || report.userId === user.id) {
       return reportUtil.formatReportResponse(report);
     }
 
-    throw new ReportServiceError('Access denied: Report is restricted to owner.', 'FORBIDDEN');
+    throw new ReportServiceError('Access denied: Department scope mismatch or restricted.', 'FORBIDDEN');
   }
 
   /**
@@ -600,6 +597,14 @@ export class ReportService {
 
   reportGenerated(report) {
     // Hook for email notify triggers
+  }
+
+  excelGenerated(report) {
+    // Hook for excel generation notifications
+  }
+
+  csvGenerated(report) {
+    // Hook for csv generation notifications
   }
 
   reportFailed(reportId, error) {

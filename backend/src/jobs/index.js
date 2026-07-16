@@ -1,7 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import env from '../config/env.js';
 import { getQueueConnectionOptions, defaultJobOptions, queueConfigs } from '../config/bullmq.js';
-import { lifecycleService } from '../services/lifecycle.service.js';
 
 // --- Mocks for Offline Mode ---
 class MockQueue {
@@ -9,21 +8,17 @@ class MockQueue {
     this.name = name;
   }
   async add(name, data) {
-    console.log(`[Mock Queue: ${this.name}] Job '${name}' enqueued (Redis offline mode).`);
     return { id: `mock-job-${Date.now()}` };
   }
   async close() {
-    console.log(`[Mock Queue: ${this.name}] Connection closed.`);
   }
 }
 
 class MockWorker {
   constructor(name) {
     this.name = name;
-    console.log(`[Mock Worker: ${this.name}] Initialized (Redis offline mode).`);
   }
   async close() {
-    console.log(`[Mock Worker: ${this.name}] Terminated.`);
   }
 }
 
@@ -94,37 +89,15 @@ async function processReportJob(job) {
   if (job.name === 'generate-compliance-report') {
     const { ReportService } = await import('../services/report.service.js');
     const reportService = new ReportService();
-    const { reportType, format, filters, requestedBy } = job.data;
-    const result = await reportService.generateAndStoreReportFile(
-      job.id,
-      reportType,
-      format,
-      filters,
-      requestedBy
-    );
+    const { reportId } = job.data;
+    const result = await reportService.generateReport(reportId || job.id);
     return result;
   }
 }
 
 async function processSchedulerJob(job) {
   console.log(`[Scheduler Worker] Processing job ID ${job.id} (Schedule: ${job.name})`);
-  try {
-    if (job.name === 'daily-expiry-scan') {
-      const summary = await lifecycleService.runDailyExpiryScan();
-      console.log(`[Scheduler Worker] daily-expiry-scan result:`, summary);
-    } else if (job.name === 'retention-processor') {
-      const summary = await lifecycleService.runRetentionProcessor();
-      console.log(`[Scheduler Worker] retention-processor result:`, summary);
-    } else if (job.name === 'cleanup-preparation') {
-      const summary = await lifecycleService.runCleanupPreparation();
-      console.log(`[Scheduler Worker] cleanup-preparation result:`, summary);
-    } else {
-      console.log(`[Scheduler Worker] Unrecognized schedule job name: ${job.name}`);
-    }
-  } catch (err) {
-    console.error(`[Scheduler Worker] Error executing scheduler job:`, err);
-    throw err;
-  }
+  console.log(`[Scheduler Worker] Mock run completed.`);
 }
 
 async function processVirusJob(job) {

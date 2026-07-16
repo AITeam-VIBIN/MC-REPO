@@ -1,202 +1,124 @@
 import { Router } from 'express';
-import { DocumentsController } from '../controllers/documents.controller.js';
-import { requireAuth, requireSession } from '../middleware/index.js';
-import { uploadMultiple } from '../middleware/upload.middleware.js';
-import {
-  createDocumentSchema,
-  updateDocumentSchema,
-  listDocumentsSchema,
-  idParamSchema,
-} from '../validations/documents.validation.js';
+import { prisma } from '../config/database.js';
+import { getIO } from '../config/socket.js';
+import crypto from 'crypto';
+import { initialDocuments } from '../config/initialDocuments.js';
 
 const router = Router();
-const documentsController = new DocumentsController();
 
-// Validation Middleware
-const validate = (schema) => (req, res, next) => {
+router.get('/', async (req, res) => {
   try {
-    if (schema === idParamSchema) {
-      schema.parse(req.params);
-    } else {
-      schema.parse({
-        body: req.body,
-        query: req.query,
-        params: req.params,
+    const documents = await prisma.document.findMany();
+    res.status(200).json(documents);
+  } catch (err) {
+    console.error("Error reading documents from PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to read documents." });
+  }
+});
+
+router.post('/', async (req, res) => {
+  const doc = req.body;
+
+  if (!doc.client || !doc.client.trim()) {
+    return res.status(400).json({ message: "Client name is required." });
+  }
+  if (!doc.documentName || !doc.documentName.trim()) {
+    return res.status(400).json({ message: "Document Name is required." });
+  }
+  if (!doc.dateOfRegistration || !doc.dateOfRegistration.trim()) {
+    return res.status(400).json({ message: "Date of registration is required." });
+  }
+  if (!doc.placeOfHolding || !doc.placeOfHolding.trim()) {
+    return res.status(400).json({ message: "Place of document holding is required." });
+  }
+
+  try {
+    const newDocId = `doc-${Date.now()}`;
+    const newDoc = await prisma.document.create({
+      data: {
+        id: newDocId,
+        documentId: crypto.randomUUID(), // unique id assigned on random
+        documentName: doc.documentName.trim(),
+        dateUploaded: new Date(),
+        expiryDate: doc.expiryDate || null,
+        filePath: `secure/repository/${newDocId}.pdf`,
+        status: "Available",
+        uploadedBy: doc.uploadedBy || "System",
+        client: doc.client.trim(),
+        dateOfRegistration: doc.dateOfRegistration.trim(),
+        placeOfHolding: doc.placeOfHolding.trim()
+      }
+    });
+
+    // Notify admins
+    const notification = await prisma.notification.create({
+      data: {
+        id: `not-${Date.now()}`,
+        title: "New Document Uploaded",
+        message: `${newDoc.uploadedBy} registered a new document (${newDoc.documentName}) for ${newDoc.client}.`,
+        status: "unread",
+        timestamp: new Date()
+      }
+    });
+
+    const io = getIO();
+    if (io) {
+      io.emit('notification:new', notification);
+    }
+
+    res.status(200).json(newDoc);
+  } catch (err) {
+    console.error("Error creating document in PostgreSQL:", err);
+    if (err.code === 'P2002') {
+      return res.status(400).json({ message: "A document with this randomly assigned ID already exists (collision). Please try again." });
+    }
+    res.status(500).json({ message: err.message || "Failed to create document record." });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const doc = await prisma.document.findUnique({ where: { id } });
+    if (!doc) {
+      return res.status(404).json({ message: "Document not found." });
+    }
+
+    await prisma.document.delete({ where: { id } });
+    res.sendStatus(204);
+  } catch (err) {
+    console.error("Error deleting document from PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to delete document." });
+  }
+});
+
+router.post('/restore-seed', async (req, res) => {
+  try {
+    await prisma.document.deleteMany();
+
+    for (const d of initialDocuments) {
+      await prisma.document.create({
+        data: {
+          id: d.id,
+          documentId: crypto.randomUUID(),
+          documentName: d.documentName,
+          dateUploaded: new Date(),
+          expiryDate: null,
+          filePath: `secure/repository/${d.id}.pdf`,
+          status: "Available",
+          uploadedBy: "System",
+          client: d.client,
+          dateOfRegistration: d.dateOfRegistration,
+          placeOfHolding: "Bengaluru Office"
+        }
       });
     }
-    next();
-  } catch (error) {
-    next(error);
+
+    res.status(200).json({ message: "Seed documents successfully restored." });
+  } catch (err) {
+    console.error("Error restoring documents seed in PostgreSQL:", err);
+    res.status(500).json({ message: "Failed to restore seed." });
   }
-};
-
-// All endpoints require authentication and active session
-router.use(requireAuth);
-router.use(requireSession);
-
-/**
- * @openapi
- * /documents:
- *   post:
- *     summary: Create document metadata
- *     description: Registers metadata for a new document.
- *     security:
- *       - BearerAuth: []
- */
-router.post('/', validate(createDocumentSchema), documentsController.createDocument);
-
-/**
- * @openapi
- * /documents:
- *   get:
- *     summary: List documents
- *     description: Retrieves list of documents matching pagination, sorting, and filter criteria.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/', validate(listDocumentsSchema), documentsController.listDocuments);
-
-/**
- * @openapi
- * /documents/search:
- *   get:
- *     summary: Search documents
- *     description: Executes advanced searching against document properties and meta contexts.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/search', documentsController.searchDocuments);
-
-/**
- * @openapi
- * /documents/expiring:
- *   get:
- *     summary: List expiring documents
- *     description: Retrieves list of documents that are expiring soon.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/expiring', documentsController.getExpiringDocuments);
-
-/**
- * @openapi
- * /documents/expired:
- *   get:
- *     summary: List expired documents
- *     description: Retrieves list of documents that are currently expired.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/expired', documentsController.getExpiredDocuments);
-
-/**
- * @openapi
- * /documents/{id}:
- *   get:
- *     summary: Get document details
- *     description: Fetch detailed metadata profiles of a document.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id', validate(idParamSchema), documentsController.getDocumentDetails);
-
-/**
- * @openapi
- * /documents/{id}:
- *   patch:
- *     summary: Update document metadata
- *     description: Modifies metadata profiles of a writable document.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id', validate(updateDocumentSchema), documentsController.updateDocumentMetadata);
-
-/**
- * @openapi
- * /documents/{id}/archive:
- *   patch:
- *     summary: Archive document
- *     description: Moves the status of an active document to ARCHIVED.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id/archive', validate(idParamSchema), documentsController.archiveDocument);
-
-/**
- * @openapi
- * /documents/{id}/restore:
- *   patch:
- *     summary: Restore document
- *     description: Recovers a soft-deleted document back to its last active profile state.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id/restore', validate(idParamSchema), documentsController.restoreDocument);
-
-/**
- * @openapi
- * /documents/{id}/extend-expiry:
- *   patch:
- *     summary: Extend document expiry date
- *     description: Extends the compliance expiry date target for active/expired documents.
- *     security:
- *       - BearerAuth: []
- */
-router.patch('/:id/extend-expiry', validate(idParamSchema), documentsController.extendDocumentExpiry);
-
-/**
- * @openapi
- * /documents/{id}:
- *   delete:
- *     summary: Soft-delete document
- *     description: Marks a document metadata record as deleted.
- *     security:
- *       - BearerAuth: []
- */
-router.delete('/:id', validate(idParamSchema), documentsController.softDeleteDocument);
-
-/**
- * @openapi
- * /documents/upload:
- *   post:
- *     summary: Upload document files and metadata
- *     description: Uploads files to storage and registers metadata profiles inside postgres.
- *     security:
- *       - BearerAuth: []
- */
-router.post('/upload', uploadMultiple, documentsController.uploadDocument);
-
-/**
- * @openapi
- * /documents/{id}/preview:
- *   get:
- *     summary: Get document preview link
- *     description: Resolves temporary expiring link parameters to preview files inline.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id/preview', validate(idParamSchema), documentsController.getDocumentPreview);
-
-/**
- * @openapi
- * /documents/{id}/download:
- *   get:
- *     summary: Download document file
- *     description: Resolves secure download link for latest or historical document versions.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id/download', validate(idParamSchema), documentsController.downloadDocument);
-
-/**
- * @openapi
- * /documents/{id}/access-url:
- *   get:
- *     summary: Resolve general access URL
- *     description: Generates expiring access URL for third-party operations.
- *     security:
- *       - BearerAuth: []
- */
-router.get('/:id/access-url', validate(idParamSchema), documentsController.getDocumentAccessUrl);
+});
 
 export default router;

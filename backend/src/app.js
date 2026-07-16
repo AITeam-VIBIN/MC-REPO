@@ -9,19 +9,21 @@ import {
   urlEncodedParser,
   compressionMiddleware,
   apiLimiter,
-  errorLogger
+  errorLogger,
+  errorMiddleware,
+  performanceMiddleware
 } from './middleware/index.js';
-import { auditMiddleware } from './middleware/audit.middleware.js';
 import authRouter from './auth/auth.routes.js';
 import securityRouter from './routes/security.routes.js';
-import vaultRouter from './routes/vault.routes.js';
 import documentsRouter from './routes/documents.routes.js';
 import checkoutRouter from './routes/checkout.routes.js';
-import approvalRouter from './routes/approval.routes.js';
-import signatureRouter from './routes/signature.routes.js';
-import auditRouter from './routes/audit.routes.js';
+import backupRouter from './routes/backup.routes.js';
+import notificationRouter from './routes/notification.routes.js';
 
 const app = express();
+
+// Register performance monitoring as the absolute first step
+app.use(performanceMiddleware);
 
 // ==========================================
 // 1. Global Pre-Routing Middleware Chain
@@ -52,36 +54,33 @@ app.use(compressionMiddleware);
 // Global API rate limiting
 app.use(apiLimiter);
 
-// Centralized automatic audit request capture middleware
-app.use(auditMiddleware);
+
 
 // ==========================================
 // 2. Routes Routing Mounts
 // ==========================================
 
 // Mount Authentication router
-app.use('/api/v1/auth', authRouter);
-
-// Mount Consolidated Security router (Sessions, Devices, Roles, Permissions, Identity Activity)
-app.use('/api/v1', securityRouter);
-
-// Mount Vault and Folder router
-app.use('/api/v1', vaultRouter);
+app.use('/api/auth', authRouter);
 
 // Mount Document router
-app.use('/api/v1/documents', documentsRouter);
+app.use('/api/documents', documentsRouter);
 
-// Mount Checkout router
-app.use('/api/v1/checkouts', checkoutRouter);
+// Mount Checkout and Return router
+app.use('/api', checkoutRouter);
 
-// Mount Approval router
-app.use('/api/v1/approvals', approvalRouter);
 
-// Mount Signature router
-app.use('/api/v1/signatures', signatureRouter);
 
-// Mount Audit router
-app.use('/api/v1/audit', auditRouter);
+
+
+// Mount Security policy and users router
+app.use('/api', securityRouter);
+
+// Mount Backup router
+app.use('/api', backupRouter);
+
+// Mount Notifications router
+app.use('/api/notifications', notificationRouter);
 
 // Base health probe check route
 app.get('/health', (req, res) => {
@@ -108,17 +107,6 @@ app.use((req, res, next) => {
 app.use(errorLogger);
 
 // Global Centralized Error Handler Middleware (Response Formatter)
-app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  const errorCode = err.code || 'INTERNAL_SERVER_ERROR';
-
-  res.status(statusCode).json({
-    success: false,
-    error: {
-      code: errorCode,
-      message: err.message || 'An unexpected internal error occurred'
-    }
-  });
-});
+app.use(errorMiddleware);
 
 export default app;

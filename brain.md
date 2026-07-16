@@ -51,6 +51,29 @@ erDiagram
     users ||--o{ documents : "owns"
     users ||--o{ documents : "locks (active checkout)"
     users ||--o{ audit_logs : "triggers"
+    users ||--o{ vaults : "owns"
+    users ||--o{ folder_permissions : "has"
+    users ||--o{ approval_requests : "creates"
+    users ||--o{ approval_requests : "is assigned to"
+    users ||--o{ approval_steps : "assigned to"
+    approval_requests ||--o{ approval_steps : "has"
+    approval_requests ||--o{ approval_histories : "logs"
+    users ||--o{ digital_signatures : "creates"
+    users ||--o{ digital_signatures : "verifies"
+    digital_signatures ||--o{ signature_histories : "logs"
+    
+    departments ||--o{ users : "groups"
+    departments ||--o{ vaults : "owns"
+    departments ||--o{ folders : "owns"
+    departments ||--o{ documents : "owns"
+
+    vaults ||--o{ folders : "contains"
+    vaults ||--o{ documents : "contains"
+    
+    folders ||--o{ folders : "parent-to-child"
+    folders ||--o{ documents : "contains"
+    folders ||--o{ folder_permissions : "rules"
+    
     documents ||--o{ file_versions : "has revisions"
     documents ||--o{ audit_logs : "logs history"
 
@@ -58,22 +81,81 @@ erDiagram
         string id PK "Matches Supabase Auth UUID"
         string email UK
         string role "default: VIEWER"
+        string department_id FK "departments.id (nullable)"
         datetime created_at
         datetime updated_at
+    }
+
+    departments {
+        string id PK "UUID"
+        string name UK
+        datetime created_at
+        datetime updated_at
+    }
+
+    vaults {
+        string id PK "UUID"
+        string name UK
+        string description
+        enum type "DEPARTMENT, PROJECT, CLIENT, CUSTOM"
+        enum status "ACTIVE, ARCHIVED, DISABLED"
+        string owner_id FK "users.id"
+        string department_id FK "departments.id (nullable)"
+        boolean is_archived
+        boolean is_deleted
+        datetime deleted_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    folders {
+        string id PK "UUID"
+        string name
+        string parent_id FK "folders.id (nullable)"
+        string vault_id FK "vaults.id (nullable)"
+        string department_id FK "departments.id (nullable)"
+        string owner_id FK "users.id"
+        string path "absolute directory path"
+        enum status "ACTIVE, ARCHIVED, DISABLED"
+        boolean is_archived
+        boolean is_deleted
+        datetime deleted_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    folder_permissions {
+        string id PK "UUID"
+        string folder_id FK "folders.id"
+        string user_id FK "users.id"
+        enum permission "READ, WRITE, ADMIN"
+        datetime created_at
     }
 
     documents {
         string id PK "UUID"
         string name "file basename"
-        string file_path "Supabase Storage bucket path"
+        string document_number UK "unique serial number (nullable)"
+        string description
+        string[] tags "file search tags"
+        string folder_id FK "folders.id (nullable)"
+        string vault_id FK "vaults.id (nullable)"
+        string department_id FK "departments.id (nullable)"
+        string owner_id FK "users.id"
+        enum storage_provider "SUPABASE, LOCAL, AWS_S3"
+        string storage_bucket "Supabase Storage bucket"
+        string storage_path "Supabase Storage object path"
         int file_size "in bytes"
         string mime_type
+        string checksum
+        enum classification "PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED"
         enum status "PENDING_UPLOAD, DRAFT, ACTIVE, INFECTED, ARCHIVED"
         int version "increments on check-in"
-        string owner_id FK "users.id"
         boolean is_locked
         string locked_by_id FK "users.id (nullable)"
         datetime locked_at
+        boolean is_deleted
+        datetime deleted_at
         datetime created_at
         datetime updated_at
     }
@@ -88,9 +170,103 @@ erDiagram
         datetime created_at
     }
 
+    approval_requests {
+        string id PK "UUID"
+        enum reference_type "CHECKOUT, DOCUMENT, USER_ACCESS, EXTERNAL_SHARE"
+        string reference_id "polymorphic target resource UUID/string"
+        string title
+        string description
+        string reason
+        string requester_id FK "users.id"
+        datetime requested_at
+        string requester_name
+        string requester_department
+        string requester_designation
+        int current_step
+        int total_steps
+        string current_approver_id FK "users.id (nullable)"
+        string approval_level "e.g. STANDARD, DEPARTMENT, ADMIN, HIGHER_AUTHORITY"
+        string priority "LOW, NORMAL, HIGH, URGENT"
+        enum status "DRAFT, PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED, EXPIRED"
+        boolean is_deleted
+        datetime deleted_at
+        string deleted_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    approval_steps {
+        string id PK "UUID"
+        string approval_request_id FK "approval_requests.id"
+        int step_number
+        string approver_id FK "users.id"
+        string approver_role
+        enum status "DRAFT, PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED, EXPIRED"
+        datetime decision_date
+        string comments
+        string action_taken "APPROVED, REJECTED"
+        string approver_name
+        datetime created_at
+        datetime updated_at
+    }
+
+    approval_histories {
+        string id PK "UUID"
+        string approval_request_id FK "approval_requests.id"
+        enum action "CREATED, SUBMITTED, APPROVED, REJECTED, REASSIGNED, CANCELLED"
+        string performed_by "User UUID / SYSTEM"
+        datetime timestamp
+        enum previous_state "DRAFT, PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED, EXPIRED"
+        enum new_state "DRAFT, PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED, EXPIRED"
+        string remarks
+        datetime created_at
+    }
+
+    digital_signatures {
+        string id PK "UUID"
+        string signature_ref_number UK
+        enum signature_type "DRAWN, UPLOADED, CERTIFICATE"
+        enum status "CREATED, PENDING_VERIFICATION, VERIFIED, FAILED, REVOKED"
+        string user_id FK "users.id"
+        string user_snapshot
+        string department_snapshot
+        enum reference_type "CHECKOUT, RETURN, APPROVAL, DOCUMENT"
+        string reference_id
+        string storage_provider
+        string bucket_name
+        string storage_path
+        string file_hash
+        string signature_hash
+        string original_filename
+        string mime_type
+        int file_size
+        string checksum
+        string encoding_metadata
+        string verification_status
+        string verification_hash
+        string verified_by FK "users.id (nullable)"
+        datetime verified_at
+        string verification_method
+        boolean is_deleted
+        datetime deleted_at
+        string deleted_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    signature_histories {
+        string id PK "UUID"
+        string signature_id FK "digital_signatures.id"
+        string action "CREATED, UPLOADED, VERIFIED, FAILED, REVOKED"
+        string performed_by
+        datetime timestamp
+        json metadata
+        datetime created_at
+    }
+
     audit_logs {
         string id PK "UUID"
-        enum action "LOGIN, DOCUMENT_UPLOADED, DOCUMENT_DOWNLOADED, etc"
+        string action "LOGIN, DOCUMENT_UPLOADED, DOCUMENT_DOWNLOADED, etc"
         string user_id FK "users.id (nullable)"
         string document_id FK "documents.id (nullable)"
         string ip_address
@@ -98,7 +274,7 @@ erDiagram
         json payload "change logs / metadata"
         datetime created_at
     }
-```
+}
 
 ---
 
@@ -560,3 +736,258 @@ src/
 | `/api/v1/roles/:id` | `GET` | `requireAuth`, `requireRole` | `roleIdParamSchema` | Retrieves details for a specific role |
 | `/api/v1/roles/:id` | `PUT` | `requireAuth`, `requireRole` | `updateRoleSchema` | Modifies configuration details of a role |
 | `/api/v1/roles/:id` | `DELETE` | `requireAuth`, `requireRole` | `roleIdParamSchema` | Purges a custom role config |
+
+---
+
+### 10.6. Folder & Vault Domain
+This module manages vaults and folders (nested directories), adhering strictly to BCD-FSS guidelines.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── controllers/
+│   └── vault.controller.js      # Controller handling HTTP requests/responses
+├── routes/
+│   └── vault.routes.js          # Express route bindings and Zod validation schemas
+├── services/
+│   └── vault.service.js         # Core folder hierarchy rules and operations logic
+├── repositories/
+│   └── vault.repository.js      # Prisma data persistence layer for Vault/Folder
+├── utils/
+│   └── vault.util.js            # Path normalization, tree building, and depth check helpers
+└── validations/
+    └── vault.validation.js      # Vault and Folder Zod validation schemas
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Users submit requests to endpoints mapped in `routes/vault.routes.js`.
+2. Zod validation schemas verify payload parameters.
+3. If payload validation fails, a standardized `VALIDATION_ERROR` response is returned immediately.
+4. If successful, control moves to `controllers/vault.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller calls the corresponding method in `services/vault.service.js`.
+2. The service enforces circular parent loop checks, folder name uniqueness under same parent, depth constraints, path propagation for renamed/moved folders, and soft-delete cascades.
+3. The service delegates database mutations to `repositories/vault.repository.js`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/vaults` | `POST` | `requireAuth`, `requireSession` | `createVaultSchema` | Registers a new Vault storage root |
+| `/api/v1/vaults` | `GET` | `requireAuth`, `requireSession` | `listVaultsSchema` | Lists registered Vault configurations |
+| `/api/v1/vaults/:id` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Retrieves details for a specific Vault |
+| `/api/v1/vaults/:id` | `PATCH` | `requireAuth`, `requireSession` | `updateVaultSchema` | Modifies configuration details of a Vault |
+| `/api/v1/vaults/:id` | `DELETE` | `requireAuth`, `requireSession` | `idParamSchema` | Soft-deletes a Vault and its children |
+| `/api/v1/vaults/:id/archive` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema` | Archives an active Vault |
+| `/api/v1/vaults/:id/restore` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema` | Restores an archived Vault |
+| `/api/v1/folders` | `POST` | `requireAuth`, `requireSession` | `createFolderSchema` | Creates a folder under parent directory |
+| `/api/v1/folders/:id` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Retrieves folder details |
+| `/api/v1/folders/:id/tree` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Generates hierarchical folder tree of vault |
+| `/api/v1/folders/:id/breadcrumb` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Computes breadcrumb path of folder to root |
+| `/api/v1/folders/:id/contents` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Lists folders and documents inside directory |
+| `/api/v1/folders/:id` | `PATCH` | `requireAuth`, `requireSession` | `renameFolderSchema` | Renames a folder and propagates path changes |
+| `/api/v1/folders/:id/move` | `PATCH` | `requireAuth`, `requireSession` | `moveFolderSchema` | Moves folder and its descendants under new parent |
+| `/api/v1/folders/:id/restore` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema` | Restores soft-deleted folder and sub-elements |
+| `/api/v1/folders/:id` | `DELETE` | `requireAuth`, `requireSession` | `idParamSchema` | Soft-deletes folder and all its descendants |
+
+---
+
+### 10.7. Document Management Module
+This module handles Document metadata operations, lifecycle state machines, validations, REST APIs, document uploads, and database accessor mappings.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── controllers/
+│   └── documents.controller.js  # Controller handling HTTP requests/responses
+├── routes/
+│   └── documents.routes.js      # Express route bindings and Zod validation schemas
+├── services/
+│   ├── documents.service.js     # Business rules validation, lifecycle transitions, and DTO mappings
+│   └── lifecycle.service.js     # Document expiry scanners, auto-archival policies, and compliance cleanup tasks
+├── repositories/
+│   └── documents.repository.js  # Prisma persistence handler for Document records
+├── validations/
+│   └── documents.validation.js  # Document Zod validation schemas
+└── middleware/
+    └── upload.middleware.js     # Multipart form file parser and size/extension validators
+```
+
+#### Architectural Flows
+##### 1. Route Validation & Processing
+1. Users submit requests to endpoints mapped in `routes/documents.routes.js`.
+2. Zod validation schemas verify parameters (coercing search parameters and transforming `fileSize` inputs to BigInt fields).
+3. For uploads, `upload.middleware.js` intercepts, extracts the files in-memory using `multer`, and runs size and type safety checks.
+4. If payload validation fails, a standardized `VALIDATION_ERROR` response is returned immediately.
+5. If successful, control moves to `controllers/documents.controller.js`.
+
+##### 2. Service Logic and Repository Layer
+1. The controller calls the corresponding method in `services/documents.service.js`.
+2. The service enforces BCD-FSS lifecycle transitions, checks folder-uniqueness boundaries, tag normalization, and validates Vault/Folder/Owner existences.
+3. For uploads, it generates unique pathing, checks duplicate policies, uploads binaries to Supabase Storage, and registers metadata in PostgreSQL.
+4. **Atomic rollback handling**: If database registry fails, it deletes the uploaded storage object to prevent orphaned files.
+5. The service delegates database mutations to `repositories/documents.repository.js`.
+6. Outputs are mapped to `DocumentResponseDto` objects.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/documents` | `POST` | `requireAuth`, `requireSession` | `createDocumentSchema` | Registers a new document metadata profile |
+| `/api/v1/documents` | `GET` | `requireAuth`, `requireSession` | `listDocumentsSchema` | Lists and filters documents |
+| `/api/v1/documents/search` | `GET` | `requireAuth`, `requireSession` | Query Parameters | Executes advanced search query filters |
+| `/api/v1/documents/expiring` | `GET` | `requireAuth`, `requireSession` | None | Lists documents expiring soon |
+| `/api/v1/documents/expired` | `GET` | `requireAuth`, `requireSession` | None | Lists expired documents |
+| `/api/v1/documents/upload` | `POST` | `requireAuth`, `requireSession`, `uploadMultiple` | Form Metadata Fields | Safely uploads document files & registers details |
+| `/api/v1/documents/:id` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Retrieves detailed metadata profiles |
+| `/api/v1/documents/:id` | `PATCH` | `requireAuth`, `requireSession` | `updateDocumentSchema` | Modifies configuration details of a document |
+| `/api/v1/documents/:id` | `DELETE` | `requireAuth`, `requireSession` | `idParamSchema` | Soft-deletes a document |
+| `/api/v1/documents/:id/archive` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema` | Archives an active document |
+| `/api/v1/documents/:id/restore` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema` | Restores a soft-deleted document |
+| `/api/v1/documents/:id/extend-expiry` | `PATCH` | `requireAuth`, `requireSession` | `idParamSchema`, `expiryDate` | Extends document compliance expiry date |
+| `/api/v1/documents/:id/preview` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Resolves expiring inline preview parameters |
+| `/api/v1/documents/:id/download` | `GET` | `requireAuth`, `requireSession` | `idParamSchema`, `?version` | Resolves expiring direct download link parameters |
+| `/api/v1/documents/:id/access-url` | `GET` | `requireAuth`, `requireSession` | `idParamSchema` | Resolves expiring direct signed URL |
+
+---
+
+### 10.8. Storage Service Module
+This module handles all server-side file storage interactions with Supabase Storage, including upload, download, metadata checking, cloning, moving, and signed URL generation.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── config/
+│   └── supabase.js              # Supabase Client initializations and bucket configuration schemas
+├── services/
+│   └── storage/
+│       └── storage.service.js   # Main Storage wrapper exposing REST APIs on Supabase Storage
+└── utils/
+    ├── documents.util.js        # Standard path builder utilities (generateDocumentStoragePath)
+    └── storage.util.js          # File validators, path sanitizers, checksums, and unique name generators
+```
+
+#### Key Architecture Features
+* **Centralized Configuration**: Defines rules for `documents`, `signatures`, `reports`, and `temporary` buckets.
+* **Standardized Path Layout**: Enforces `documents/department-id/year/month/document-id/version/filename` dynamic storage structure.
+* **Security & Sandboxing**: Restricts path traversals (`..`), sanitizes filenames to prevent command injections, and handles duplicate names contextually.
+* **Standardized Exception mapping**: Intercepts client exceptions and transforms them to specific application-level `StorageError` codes (`BUCKET_NOT_FOUND`, `OBJECT_NOT_FOUND`, `EXPIRED_SIGNED_URL`, etc.).
+
+---
+
+### 10.9. Document Repository Testing Module
+This module implements the automated testing infrastructure validating unit behaviors and integration endpoints of the Document module.
+
+#### Associated Files (Directory Structure)
+```text
+tests/
+├── fixtures/
+│   └── documents.fixture.js     # Shared fixtures for users, folders, documents, and departments
+├── helpers/
+│   └── db.js                    # Database cleanup utilities in correct dependency order
+├── mocks/
+│   └── storage.mock.js          # Mocks static StorageService operations bypassing Supabase
+├── unit/
+│   ├── lifecycle.test.js        # Unit tests verifying exiries, scanners, and extensions
+│   └── documents.test.js        # Unit tests verifying metadata uploads, duplicate checks, and access urls
+└── integration/
+    └── documents.routes.test.js # API Integration tests running mock servers and fetching endpoint assertions
+```
+
+#### Test Execution Setup
+* **Test Command**: `npm test` or `node --test tests/**/*.test.js`
+* **Test Isolation**: Employs cleanups on `beforeEach` / `afterEach` routines. Uses local Express app instances dynamically bound to alternate test ports (`5001`). Mocks Supabase getUser bindings to bypass identity provider dependencies.
+
+---
+
+### 10.10. Polymorphic Approval Workflow Module
+This module implements a generic, polymorphic multi-step approval workflow system decoupled from specific target resource models.
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── controllers/
+│   └── approval.controller.js    # Express Controller handling HTTP transport logic
+├── routes/
+│   └── approval.routes.js        # REST routes secured under requireAuth, requireSession, requirePermission
+├── services/
+│   └── approval.service.js       # Business logic orchestrator handling step transitions and decisions
+├── repositories/
+│   └── approval.repository.js    # Persistence operations executing Prisma query mutations
+├── validations/
+│   └── approval.validation.js    # Zod payload structures and query filters validations
+└── utils/
+    └── approval.util.js          # Reference key generators, durations calculations, and event hooks
+```
+
+#### Key Architecture Features
+* **Polymorphic Reference System**: Binds requests to any resource type (`CHECKOUT`, `DOCUMENT`, `USER_ACCESS`, `EXTERNAL_SHARE`) using generic `referenceType` and `referenceId` key snap points.
+* **Multi-Step Workflows**: Tracks step-by-step sequential approver decisions. Complete workflow fails immediately if any step rejects, or completes if final step is approved.
+* **Immutable Audit Trail**: Inserts history event logs for creation, submission, decision states, reassignment, and cancellation. Logs are append-only.
+* **Snapshot Storage**: Snapshots requester department/designation and approver credentials to preserve historical telemetry context even if user models update.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/approvals` | `POST` | `requireAuth`, `requireSession`, `APPROVAL_CREATE` | `createApprovalSchema` | Submits/Creates a new approval request |
+| `/api/v1/approvals` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `listApprovalsSchema` | Lists approvals with sorting and pagination |
+| `/api/v1/approvals/my-requests` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `listApprovalsSchema` | List approval requests initiated by the user |
+| `/api/v1/approvals/my-pending` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `listApprovalsSchema` | List pending requests waiting for user decision |
+| `/api/v1/approvals/my-history` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `listApprovalsSchema` | Retrieves completed history logs for the user |
+| `/api/v1/approvals/:id` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `idParamSchema` | Retrieves request details profile |
+| `/api/v1/approvals/:id` | `PATCH` | `requireAuth`, `requireSession`, `APPROVAL_UPDATE` | `updateApprovalSchema` | Modifies properties of a draft request |
+| `/api/v1/approvals/:id` | `DELETE` | `requireAuth`, `requireSession`, `APPROVAL_MANAGE` | `idParamSchema` | Soft-deletes a request |
+| `/api/v1/approvals/:id/submit` | `POST` | `requireAuth`, `requireSession`, `APPROVAL_CREATE` | `idParamSchema` | Submits draft request to PENDING state |
+| `/api/v1/approvals/:id/approve` | `POST` | `requireAuth`, `requireSession`, `APPROVAL_APPROVE` | `decisionSchema` | Approves current step of the workflow |
+| `/api/v1/approvals/:id/reject` | `POST` | `requireAuth`, `requireSession`, `APPROVAL_REJECT` | `decisionSchema` | Rejects step and completes request as rejected |
+| `/api/v1/approvals/:id/cancel` | `POST` | `requireAuth`, `requireSession`, `APPROVAL_CREATE` | `cancelSchema` | Cancels active approval request |
+| `/api/v1/approvals/:id/timeline` | `GET` | `requireAuth`, `requireSession`, `APPROVAL_VIEW` | `idParamSchema` | Assembles chronological timeline history logs |
+
+---
+
+### 10.11. Decoupled Digital Signature Module
+This module provides a generic, decoupled signature management engine allowing users to sign transactions (such as checkouts, returns, or approval workflows).
+
+#### Associated Files (Directory Structure)
+```text
+src/
+├── controllers/
+│   └── signature.controller.js   # Express Controller handling request transport
+├── routes/
+│   └── signature.routes.js       # REST endpoint routes protected under requireAuth, requireSession, requirePermission
+├── services/
+│   └── signature.service.js      # Business logic orchestrating uploads, decoding base64, and verification lifecycles
+├── repositories/
+│   └── signature.repository.js   # Persistence layer querying digital_signatures and signature_histories
+├── validations/
+│   └── signature.validation.js   # Zod validations for payload creation, queries, parameters
+└── utils/
+    └── signature.util.js         # Hashing functions (tamper proof hashes), reference number generators, hooks
+```
+
+#### Key Architecture Features
+* **Generic Reference Mapping**: Binds to any target transaction model (e.g. `CHECKOUT`, `RETURN`, `APPROVAL`, `DOCUMENT`) via polymorphic `referenceType` and `referenceId` bindings.
+* **Canvas Base64 Decoding**: Automatically decodes canvas Drawn base64 data payloads, converts them to binary buffers, and uploads them to Supabase Storage.
+* **Tamper Proof Cryptography**: Computes and stores SHA-256 signature hashes incorporating `userId`, `referenceId`, `timestamp`, and file checksums.
+* **Append-Only Event Logs**: Logs creation, uploads, verification, failures, and revocals in `signature_histories`.
+
+#### Mapped Endpoints
+| Endpoint | Method | Middleware | Payload Validation | Description |
+|---|---|---|---|---|
+| `/api/v1/signatures` | `POST` | `requireAuth`, `requireSession`, `SIGNATURE_CREATE` | `createSignatureSchema` | Creates/Uploads new digital signature |
+| `/api/v1/signatures` | `GET` | `requireAuth`, `requireSession`, `SIGNATURE_VIEW` | `listSignaturesSchema` | Lists all signatures (Admin query) |
+| `/api/v1/signatures/my` | `GET` | `requireAuth`, `requireSession`, `SIGNATURE_VIEW` | `listSignaturesSchema` | Lists current user's signatures |
+| `/api/v1/signatures/reference/:referenceType/:referenceId` | `GET` | `requireAuth`, `requireSession`, `SIGNATURE_VIEW` | `referenceParamsSchema` | Lists signatures attached to reference |
+| `/api/v1/signatures/:id` | `GET` | `requireAuth`, `requireSession`, `SIGNATURE_VIEW` | `idParamSchema` | Retrieves signature metadata profile |
+| `/api/v1/signatures/:id` | `DELETE` | `requireAuth`, `requireSession`, `SIGNATURE_REVOKE` | `idParamSchema` | Soft deletes / revokes a signature record |
+| `/api/v1/signatures/:id/verify` | `POST` | `requireAuth`, `requireSession`, `SIGNATURE_VERIFY` | `idParamSchema`, `verifySignatureSchema` | Verifies and approves a signature (Admin only) |
+| `/api/v1/signatures/:id/reject` | `POST` | `requireAuth`, `requireSession`, `SIGNATURE_VERIFY` | `idParamSchema`, `rejectSignatureSchema` | Rejects a signature verification |
+| `/api/v1/signatures/:id/revoke` | `POST` | `requireAuth`, `requireSession`, `SIGNATURE_REVOKE` | `idParamSchema`, `revokeSignatureSchema` | Revokes an active verified signature |
+| `/api/v1/signatures/:id/history` | `GET` | `requireAuth`, `requireSession`, `SIGNATURE_VIEW` | `idParamSchema` | Assembles chronological timeline history |
+
+
+
+
+
+
+
