@@ -188,7 +188,7 @@ jobs:
 
       - name: Wait for Backend Server
         working-directory: backend
-        run: npx wait-on http://localhost:5000 --timeout 60000
+        run: npx wait-on http://localhost:5000/health --timeout 60000
 
       - name: Setup Node.js (Frontend)
         uses: actions/setup-node@v4
