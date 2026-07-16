@@ -168,16 +168,16 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install backend dependencies & generate Prisma client
+        working-directory: backend
         run: |
-          cd backend
           npm ci
           npx prisma generate
           npx prisma db push
           npm run seed
 
       - name: Start Backend Server
+        working-directory: backend
         run: |
-          cd backend
           npm start &
         env:
           REDIS_ENABLED: true
@@ -187,6 +187,7 @@ jobs:
           JWT_SECRET: testingjwtsecretmustbelongerthenusual
 
       - name: Wait for Backend Server
+        working-directory: backend
         run: npx wait-on http://localhost:5000 --timeout 60000
 
       - name: Setup Node.js (Frontend)
@@ -197,23 +198,24 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
+        working-directory: frontend
         run: |
-          cd frontend
           npm ci --legacy-peer-deps
 
       - name: Start dev server in background
+        working-directory: frontend
         run: |
-          cd frontend
           npm run dev &
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL || 'http://localhost:5000' }}
 
       - name: Wait for server
+        working-directory: frontend
         run: npx wait-on http://localhost:3000 --timeout 60000
 
       - name: Run Cypress E2E tests
+        working-directory: frontend
         run: |
-          cd frontend
           npm run cypress:run
         env:
           CYPRESS_TEST_ADMIN_EMAIL: ${{ secrets.CYPRESS_ADMIN_EMAIL || 'ankita.agarwal@mitconindia.com' }}
