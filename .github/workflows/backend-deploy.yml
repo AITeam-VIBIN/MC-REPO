@@ -2,9 +2,9 @@ name: BCD-FSS Backend Build and Deploy CI/CD
 
 on:
   push:
-    branches: [ main, master, staging ]
+    branches: [ main, development ]
   pull_request:
-    branches: [ main, master, staging ]
+    branches: [ main, development ]
 
 jobs:
   test-and-validate:
