@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "🐳 Running BCD-FSS entrypoint startup sequence..."
+echo "🐳 Running MITCON Credentia entrypoint startup sequence..."
 
 # 1. Verify Database URL is set
 if [ -z "$DATABASE_URL" ]; then

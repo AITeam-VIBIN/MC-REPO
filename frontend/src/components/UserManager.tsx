@@ -21,7 +21,8 @@ export default function UserManager({
   // Create User fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<UserRole>("user");
+  const [role, setRole] = useState<UserRole>("developer");
+  const [designation, setDesignation] = useState("");
   const [createUserError, setCreateUserError] = useState("");
   const [createUserSuccess, setCreateUserSuccess] = useState(false);
 
@@ -51,6 +52,12 @@ export default function UserManager({
       return;
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail.endsWith('@mitconindia.com') && !cleanEmail.endsWith('@mitconcredentia.in')) {
+      setCreateUserError("Organizational email must end with @mitconindia.com or @mitconcredentia.in.");
+      return;
+    }
+
     try {
       const response = await fetch("/api/users", {
         method: "POST",
@@ -59,7 +66,7 @@ export default function UserManager({
           "X-Operator-Name": currentUser.name,
           "X-Operator-Role": currentUser.role
         },
-        body: JSON.stringify({ name, email, role })
+        body: JSON.stringify({ name, email, role, designation })
       });
 
       const data = await response.json();
@@ -68,6 +75,7 @@ export default function UserManager({
       setCreateUserSuccess(true);
       setName("");
       setEmail("");
+      setDesignation("");
       onRefresh();
     } catch (err: any) {
       setCreateUserError(err.message || "Server Error.");
@@ -176,6 +184,9 @@ export default function UserManager({
                     <td className="px-4 py-3 font-semibold text-slate-950">
                       {u.name}
                       <span className="block text-[10px] text-slate-400 font-normal font-mono font-sans">{u.email}</span>
+                      {u.designation && (
+                        <span className="block text-[10px] text-amber-600 font-medium font-mono font-sans mt-0.5">{u.designation}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getRoleBadge(u.role)}`}>
@@ -224,11 +235,11 @@ export default function UserManager({
 
             {createUserError && (
               <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-lg text-xs">
-                ⚠️ {createUserError}
+                {createUserError}
               </div>
             )}
 
-            <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-4 gap-3.5">
               <div>
                 <input
                   type="text"
@@ -244,7 +255,7 @@ export default function UserManager({
                 <input
                   type="email"
                   required
-                  placeholder="organizational-email@bcd.org"
+                  placeholder="name@mitconindia.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none font-mono"
@@ -257,14 +268,23 @@ export default function UserManager({
                   onChange={(e) => setRole(e.target.value as any)}
                   className="w-full px-2 py-2 text-xs bg-white border border-slate-200 rounded-lg"
                 >
-                  <option value="user">Standard User</option>
                   <option value="admin">Administrator</option>
                   <option value="super-admin">Super Admin</option>
                   <option value="developer">Developer</option>
                 </select>
               </div>
+              
+              <div>
+                <input
+                  type="text"
+                  placeholder="Designation (e.g. BD Manager)"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none"
+                />
+              </div>
 
-              <div className="md:col-span-3 flex justify-end">
+              <div className="md:col-span-4 flex justify-end">
                 <button
                   type="submit"
                   className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 cursor-pointer"

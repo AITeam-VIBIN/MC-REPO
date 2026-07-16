@@ -10,9 +10,9 @@ async function prismaSelectUserRole(userId) {
       where: { id: userId },
       select: { role: true },
     });
-    return user?.role || 'VIEWER';
+    return user?.role || 'EDITOR';
   } catch {
-    return 'VIEWER';
+    return 'EDITOR';
   }
 }
 

@@ -17,6 +17,50 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [sortBy, setSortBy] = useState("dateUploadedDesc");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const getSuggestions = () => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    const list: { key: string; value: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const d of documents) {
+      if (d.client.toLowerCase().includes(term)) {
+        const item = { key: "Client", value: d.client };
+        const serialized = `${item.key}:${item.value}`;
+        if (!seen.has(serialized)) {
+          seen.add(serialized);
+          list.push(item);
+        }
+      }
+      if (d.documentName.toLowerCase().includes(term)) {
+        const item = { key: "Doc", value: d.documentName };
+        const serialized = `${item.key}:${item.value}`;
+        if (!seen.has(serialized)) {
+          seen.add(serialized);
+          list.push(item);
+        }
+      }
+      if (d.placeOfHolding.toLowerCase().includes(term)) {
+        const item = { key: "Holding", value: d.placeOfHolding };
+        const serialized = `${item.key}:${item.value}`;
+        if (!seen.has(serialized)) {
+          seen.add(serialized);
+          list.push(item);
+        }
+      }
+      if (d.uploadedBy && d.uploadedBy.toLowerCase().includes(term)) {
+        const item = { key: "By", value: d.uploadedBy };
+        const serialized = `${item.key}:${item.value}`;
+        if (!seen.has(serialized)) {
+          seen.add(serialized);
+          list.push(item);
+        }
+      }
+    }
+    return list.slice(0, 8);
+  };
 
   // Selection folder view
   const [folderView, setFolderView] = useState<'all' | 'client'>('all');
@@ -25,15 +69,17 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
   // Upload document modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [upName, setUpName] = useState("");
-  const [upId, setUpId] = useState("");
   const [upClient, setUpClient] = useState("");
+  const [upDateOfRegistration, setUpDateOfRegistration] = useState(new Date().toISOString().split('T')[0]);
+  const [upPlaceOfHolding, setUpPlaceOfHolding] = useState("");
   const [errorUpload, setErrorUpload] = useState("");
   
   const closeUploadModal = () => {
     setShowUploadModal(false);
     setUpName("");
-    setUpId("");
     setUpClient("");
+    setUpDateOfRegistration(new Date().toISOString().split('T')[0]);
+    setUpPlaceOfHolding("");
     setErrorUpload("");
   };
 
@@ -44,13 +90,15 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
   const statuses = ["All", "Available", "Checked Out", "Returned"];
 
   // Handle uploading doc
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!upName || !upId) {
-      setErrorUpload("Please fill in Document Name and unique Document ID registration code.");
+    if (!upName || !upClient || !upDateOfRegistration || !upPlaceOfHolding) {
+      setErrorUpload("Please fill in Client Name, Document Name, Date of Registration, and Place of Document Holding.");
       return;
     }
     setErrorUpload("");
+    setIsSubmitting(true);
 
     try {
       const response = await fetch("/api/documents", {
@@ -62,9 +110,10 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
         },
         body: JSON.stringify({
           documentName: upName,
-          documentId: upId,
-          uploadedBy: currentUser.name,
-          client: upClient || "Internal Core"
+          client: upClient,
+          dateOfRegistration: upDateOfRegistration,
+          placeOfHolding: upPlaceOfHolding,
+          uploadedBy: currentUser.name
         })
       });
 
@@ -76,6 +125,8 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
       onRefresh();
     } catch (err: any) {
       setErrorUpload(err.message || "Network Upload Interrupted.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -128,7 +179,8 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
   const filteredDocs = documents.filter(doc => {
     const matchesSearch = 
       doc.documentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.documentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.placeOfHolding.toLowerCase().includes(searchTerm.toLowerCase()) ||
       doc.uploadedBy.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = selectedStatus === "All" || doc.status === selectedStatus;
@@ -148,7 +200,8 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
     if (sortBy === "dateUploadedAsc") return new Date(a.dateUploaded).getTime() - new Date(b.dateUploaded).getTime();
     if (sortBy === "nameAsc") return a.documentName.localeCompare(b.documentName);
     if (sortBy === "nameDesc") return b.documentName.localeCompare(a.documentName);
-    if (sortBy === "docId") return a.documentId.localeCompare(b.documentId);
+    if (sortBy === "dateRegDesc") return new Date(b.dateOfRegistration).getTime() - new Date(a.dateOfRegistration).getTime();
+    if (sortBy === "dateRegAsc") return new Date(a.dateOfRegistration).getTime() - new Date(b.dateOfRegistration).getTime();
     return 0;
   });
 
@@ -258,10 +311,42 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                   id="repo-search-input"
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Doc Name, ID, uploader..."
                   className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all"
                 />
+
+                {showSuggestions && searchTerm.trim() && (
+                  <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto divide-y divide-slate-100 py-1">
+                    {getSuggestions().length > 0 ? (
+                      getSuggestions().map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onMouseDown={() => {
+                            setSearchTerm(item.value);
+                            setShowSuggestions(false);
+                          }}
+                          className="w-full px-4 py-2 text-left text-xs hover:bg-slate-50 transition-colors flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="font-semibold text-slate-800 truncate mr-2">{item.value}</span>
+                          <span className="text-[9px] uppercase font-bold text-slate-400 font-mono tracking-wider shrink-0 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200">
+                            {item.key}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-left text-xs text-slate-400 italic">
+                        No matches found
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Status dropdown */}
@@ -289,7 +374,8 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                   <option value="dateUploadedAsc">Oldest Uploaded</option>
                   <option value="nameAsc">Alphabetical A-Z</option>
                   <option value="nameDesc">Alphabetical Z-A</option>
-                  <option value="docId">Document ID order</option>
+                  <option value="dateRegDesc">Newest Registered</option>
+                  <option value="dateRegAsc">Oldest Registered</option>
                 </select>
               </div>
             </div>
@@ -338,7 +424,7 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded">
-                          {doc.documentId}
+                          {doc.placeOfHolding}
                         </span>
 
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${getStatusStyle(doc.status)}`}>
@@ -351,9 +437,9 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                       </h3>
 
                       <div className="flex flex-wrap text-[11px] text-slate-500 gap-x-3 gap-y-1 font-mono items-center">
-                        <span>Owner: <b className="text-slate-800">{doc.owner}</b></span>
-                        <span className="text-slate-300">|</span>
                         <span>Client: <b className="text-slate-800">{doc.client}</b></span>
+                        <span className="text-slate-300">|</span>
+                        <span>Registered: <b className="text-slate-800">{doc.dateOfRegistration}</b></span>
                         <span className="text-slate-300">|</span>
                         <span>Uploaded By: <b className="text-slate-800">{doc.uploadedBy}</b></span>
                       </div>
@@ -428,12 +514,25 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
 
             {errorUpload && (
               <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-xl mb-4">
-                ⚠️ {errorUpload}
+                {errorUpload}
               </div>
             )}
 
             <form onSubmit={handleUploadSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Client Name *</label>
+                  <input
+                    type="text"
+                    value={upClient}
+                    onChange={(e) => setUpClient(e.target.value)}
+                    required
+                    maxLength={100}
+                    placeholder="e.g., Invesco Guard Ltd"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-950"
+                  />
+                </div>
+
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Document Name *</label>
                   <input
@@ -448,38 +547,29 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Document ID Code *</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Date of Registration *</label>
                   <input
-                    type="text"
-                    value={upId}
-                    onChange={(e) => setUpId(e.target.value)}
+                    type="date"
+                    value={upDateOfRegistration}
+                    onChange={(e) => setUpDateOfRegistration(e.target.value)}
                     required
-                    maxLength={30}
-                    placeholder="e.g., DOC-FIN-102"
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-950"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Owner Office Holder</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Place of Document Holding *</label>
                   <input
                     type="text"
-                    value={currentUser.name}
-                    disabled
-                    className="w-full px-3 py-2 text-xs bg-slate-100 border border-slate-200 rounded-xl text-slate-500"
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Relational Client</label>
-                  <input
-                    type="text"
-                    value={upClient}
-                    onChange={(e) => setUpClient(e.target.value)}
-                    placeholder="e.g., Invesco Guard Ltd"
+                    value={upPlaceOfHolding}
+                    onChange={(e) => setUpPlaceOfHolding(e.target.value)}
+                    required
+                    maxLength={100}
+                    placeholder="e.g., Main Vault Room 3"
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-950"
                   />
                 </div>
+
               </div>
 
               <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
@@ -492,9 +582,10 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold font-display transition-all cursor-pointer shadow-sm"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-xs font-semibold font-display transition-all cursor-pointer shadow-sm"
                 >
-                  Commit Entry
+                  {isSubmitting ? "Committing..." : "Commit Entry"}
                 </button>
               </div>
             </form>
@@ -507,18 +598,18 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 text-center animate-scaleIn">
             <h3 className="text-base font-bold text-slate-900 font-display mb-1">Document Tracking QR Code</h3>
-            <p className="text-xs text-slate-500 mb-4 font-mono">{showQrModal.docId}</p>
+            <p className="text-xs text-slate-500 mb-4 font-display font-semibold text-slate-800">{showQrModal.name}</p>
 
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 inline-block shadow-inner mx-auto mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 29 29" className="shape-rendering-crispEdges">
                 <path fill="#0f172a" d="M0 0h7v7H0zM22 0h7v7h-7zM0 22h7v7H0zM9 0h2v2H9zM15 0h2v4h-2zM12 3h1v1h-1zM2 2h3v3H2zM24 2h3v3h-3zM2 24h3v3H2zM9 9h3v1H9zM16 10h4v1h-4zM10 14h2v2h-2zM22 17h4v2h-4zM18 20h3v4h-3zM26 22h3v3h-3z" />
                 <path fill="#f59e0b" d="M11 11h2v2h-2zM19 14h2v2h-2zM14 17h1v1h-1z" />
-                <text x="11.5" y="16.5" fill="#0f172a" style={{fontFamily: 'serif', fontWeight: 'bold', fontSize: '8px'}}>₿</text>
+                <text x="11.5" y="16.5" fill="#0f172a" style={{fontFamily: 'serif', fontWeight: 'bold', fontSize: '8px'}}>M</text>
               </svg>
             </div>
 
             <div className="bg-slate-100 p-2.5 rounded-xl text-[10px] text-slate-600 font-mono select-all text-center leading-relaxed">
-              ID-BADGE-HASH: <span className="font-bold text-slate-900">BCD_{showQrModal.id.toUpperCase()}_TOKEN</span>
+              <p className="text-slate-500 font-semibold">QR Code contains a secure database key reference</p>
               <p className="mt-1 text-slate-400">Scanned at checkpoint terminals to verify offsite logs</p>
             </div>
 
@@ -526,7 +617,7 @@ export default function RepoManager({ documents, currentUser, onRefresh, onSelec
               <button
                 onClick={() => {
                   alert("Credential Token QR copied to clipboard!");
-                  navigator.clipboard.writeText(`BCD-FSS VERIFIED COORD PATH: ${window.location.origin}/doc/${showQrModal.docId}`);
+                  navigator.clipboard.writeText(`MITCON Credentia VERIFIED PATH: ${window.location.origin}/doc/${showQrModal.docId}`);
                 }}
                 className="flex-1 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all cursor-pointer"
               >

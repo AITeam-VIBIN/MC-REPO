@@ -1,5 +1,5 @@
 #!/bin/sh
 set -e
 
-echo "Starting BCD-FSS application server process..."
+echo "Starting MITCON Credentia application server process..."
 node src/server.js

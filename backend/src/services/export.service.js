@@ -61,7 +61,7 @@ export class ExportService {
    */
   async generateExcel(report, dataset) {
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'MITCON BCD-FSS Ledger';
+    workbook.creator = 'MITCON Credentia Ledger';
     workbook.created = new Date();
 
     // 1. Add Metadata Sheet

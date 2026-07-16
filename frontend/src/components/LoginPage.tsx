@@ -38,7 +38,7 @@ export default function LoginPage({ onSuccess, mfaDefaultSetting }: LoginPagePro
 
       onSuccess(data.user, data.token);
     } catch (err: any) {
-      setError(err.message || "Network Error accessing BCD-FSS Node.");
+      setError(err.message || "Network Error accessing MITCON Credentia Node.");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ export default function LoginPage({ onSuccess, mfaDefaultSetting }: LoginPagePro
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  placeholder="name@bitcoin-credentials.org"
+                  placeholder="name@mitconindia.com"
                   className="block w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
                 />
               </div>

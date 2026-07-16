@@ -11,8 +11,16 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: "No organizational records found matching this email address." });
   }
 
-  // Allow standard password for demo accounts
-  if (password !== "password123" && password !== "admin") {
+  const validPasswords = [
+    "password123",
+    "admin",
+    "Vibin1806@1038",
+    "Ankita0207@10841",
+    "Ravi2608@90092",
+    "Mahesh0607@11150"
+  ];
+
+  if (!validPasswords.includes(password)) {
     return res.status(401).json({ message: "Invalid credentials entered." });
   }
 
@@ -22,7 +30,8 @@ router.post('/login', async (req, res) => {
       name: matchedUser.name,
       email: matchedUser.email,
       role: matchedUser.role,
-      status: matchedUser.status
+      status: matchedUser.status,
+      designation: matchedUser.designation
     },
     token: `mock-jwt-token-for-${matchedUser.email}`
   });

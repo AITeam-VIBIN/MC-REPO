@@ -31,9 +31,14 @@ export default function NotificationCenter({ notifications, onMarkRead, onClearA
 
       {/* DROPDOWN POPUP */}
       {isOpen && (
-        <div className="absolute right-0 mt-2.5 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden animate-scaleIn">
-          <div className="bg-slate-900 text-white p-3.5 flex justify-between items-center border-b border-slate-800">
-            <div className="flex items-center gap-1.5">
+        <>
+          <div 
+            className="fixed inset-0 z-30" 
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="absolute right-0 mt-2.5 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden animate-scaleIn">
+            <div className="bg-slate-900 text-white p-3.5 flex justify-between items-center border-b border-slate-800">
+              <div className="flex items-center gap-1.5">
               <Radio className="w-3.5 h-3.5 text-amber-500 animate-ping" />
               <span className="font-bold text-slate-100 font-display">System Notices Ticker</span>
             </div>
@@ -97,7 +102,8 @@ export default function NotificationCenter({ notifications, onMarkRead, onClearA
             </button>
           </div>
         </div>
-      )}
+      </>
+    )}
     </div>
   );
 }

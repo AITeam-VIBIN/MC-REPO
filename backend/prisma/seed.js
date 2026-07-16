@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
+import { initialDocuments } from '../src/config/initialDocuments.js';
 
 const prisma = new PrismaClient();
 
@@ -27,36 +29,40 @@ async function main() {
   console.log('Seeding core users...');
   const users = [
     {
-      id: "usr-1",
-      name: "Sarah Jenkins",
-      email: "super1@bitcoin-credentials.org",
-      role: "super-admin",
-      createdAt: new Date(),
-      status: "active"
-    },
-    {
-      id: "usr-2",
-      name: "Michael Chang",
-      email: "admin1@bitcoin-credentials.org",
-      role: "admin",
-      createdAt: new Date(),
-      status: "active"
-    },
-    {
-      id: "usr-3",
-      name: "Robert Downey",
-      email: "user1@bitcoin-credentials.org",
-      role: "user",
-      createdAt: new Date(),
-      status: "active"
-    },
-    {
-      id: "usr-4",
-      name: "Satoshi Nakamoto",
-      email: "dev1@bitcoin-credentials.org",
+      id: "1038",
+      name: "Vibin Cariappa",
+      email: "vibin.cariappa@mitconindia.com",
       role: "developer",
       createdAt: new Date(),
-      status: "active"
+      status: "active",
+      designation: "Data Analyst Intern (BDS)"
+    },
+    {
+      id: "10841",
+      name: "Ankita Agrawal",
+      email: "ankita.agarwal@mitconindia.com",
+      role: "super-admin",
+      createdAt: new Date(),
+      status: "active",
+      designation: "Regional Head"
+    },
+    {
+      id: "90092",
+      name: "Ravi Injolkar",
+      email: "ravi@mitconcredentia.in",
+      role: "admin",
+      createdAt: new Date(),
+      status: "active",
+      designation: "BD Manager"
+    },
+    {
+      id: "11150",
+      name: "Mahesh Madhavarm",
+      email: "mahesh.madhavarm@mitconindia.com",
+      role: "admin",
+      createdAt: new Date(),
+      status: "active",
+      designation: "HR & Admin Executive"
     }
   ];
 
@@ -65,47 +71,22 @@ async function main() {
   }
 
   console.log('Seeding standard document library...');
-  const docs = [
-    {
-      id: "doc-1",
-      documentId: "DOC-HR-002",
-      documentName: "HR General Policy & Employee Handbook",
-      owner: "Sarah Jenkins",
-      dateUploaded: new Date(),
-      expiryDate: "2027-12-31",
-      filePath: "hr/policy/handbook.pdf",
-      status: "Available",
-      uploadedBy: "Sarah Jenkins",
-      client: "Internal Core"
-    },
-    {
-      id: "doc-2",
-      documentId: "DOC-ENG-2026-001",
-      documentName: "System Architectural Design Blueprint",
-      owner: "Robert Downey",
-      dateUploaded: new Date(),
-      expiryDate: "2028-06-30",
-      filePath: "eng/specs/blueprint.pdf",
-      status: "Available",
-      uploadedBy: "Robert Downey",
-      client: "Internal Core"
-    },
-    {
-      id: "doc-3",
-      documentId: "DOC-LEG-2026-001",
-      documentName: "Standard Non-Disclosure Agreement Document",
-      owner: "Michael Chang",
-      dateUploaded: new Date(),
-      expiryDate: "2029-01-01",
-      filePath: "legal/agreements/nda.docx",
-      status: "Available",
-      uploadedBy: "Michael Chang",
-      client: "Internal Core"
-    }
-  ];
-
-  for (const d of docs) {
-    await prisma.document.create({ data: d });
+  for (const d of initialDocuments) {
+    await prisma.document.create({
+      data: {
+        id: d.id,
+        documentId: crypto.randomUUID(),
+        documentName: d.documentName,
+        dateUploaded: new Date(),
+        expiryDate: null,
+        filePath: `secure/repository/${d.id}.pdf`,
+        status: "Available",
+        uploadedBy: "System",
+        client: d.client,
+        dateOfRegistration: d.dateOfRegistration,
+        placeOfHolding: "Bengaluru Office"
+      }
+    });
   }
 
   console.log('Seeding initial notifications...');
@@ -113,7 +94,7 @@ async function main() {
     data: {
       id: "not-1",
       title: "System Seeding Active",
-      message: "Welcome to MITCON Credential Digital File Storage System (BCD-FSS). The secure node is fully database-synchronized.",
+      message: "Welcome to MITCON Credentia. The secure node is fully database-synchronized.",
       status: "unread",
       timestamp: new Date()
     }

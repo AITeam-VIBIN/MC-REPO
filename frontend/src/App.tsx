@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 import {
-  FileText, ShieldAlert, LogOut, LayoutDashboard, FolderOpen,
-  RefreshCw, ClipboardCheck, History, Sliders, Database, FileBarChart, Bell, FileDigit
+  LogOut, LayoutDashboard, FolderOpen, RefreshCw, History, Sliders, FileBarChart
 } from "lucide-react";
 import { User, Document, Checkout, Notification, SecurityPolicy, ReturnRecord } from "./types";
 import LoginPage from "./components/LoginPage";
@@ -53,6 +52,13 @@ export default function App() {
   // Interval synchronization flag
   const [syncing, setSyncing] = useState(false);
 
+  // Request desktop notification permission on mount
+  useEffect(() => {
+    if ("Notification" in window && window.Notification.permission === "default") {
+      window.Notification.requestPermission();
+    }
+  }, []);
+
   // Fetch full dataset core
   const fetchAllData = async () => {
     if (!token) return;
@@ -84,7 +90,14 @@ export default function App() {
 
       if (docsRes.ok) setDocuments(docs);
       if (checksRes.ok) setCheckouts(checks);
-      if (usersRes.ok) setUsers(userItems);
+      if (usersRes.ok) {
+        setUsers(userItems);
+        const freshUser = userItems.find((u: User) => u.email === user?.email);
+        if (freshUser) {
+          setUser(freshUser);
+          localStorage.setItem("bcd_user", JSON.stringify(freshUser));
+        }
+      }
       if (retRes.ok) setReturns(returnItems);
       if (notRes.ok) setNotifications(notifyItems);
       if (polRes.ok) setPolicies(policyData);
@@ -109,7 +122,7 @@ export default function App() {
       });
 
       socket.on("connect", () => {
-        console.log("Socket.IO connected to BCD-FSS Node");
+        console.log("Socket.IO connected to MITCON Credentia Node");
       });
 
       socket.on("notification:new", (newNot: Notification) => {
@@ -117,6 +130,14 @@ export default function App() {
         setNotifications(prev => [newNot, ...prev]);
         // Also sync all details since checkouts/documents statuses changed!
         fetchAllData();
+
+        // Native browser desktop notification push
+        if ("Notification" in window && window.Notification.permission === "granted") {
+          new window.Notification(newNot.title, {
+            body: newNot.message,
+            icon: "/logo.png"
+          });
+        }
       });
 
       return () => {
@@ -138,7 +159,7 @@ export default function App() {
     setConfirmModal({
       isOpen: true,
       title: "Confirm Sign Out",
-      message: "Verify: Are you sure you want to sign out of BCD-FSS Secure Vault?",
+      message: "Verify: Are you sure you want to sign out of MITCON Credentia Secure Vault?",
       onConfirm: () => {
         setUser(null);
         setToken(null);
@@ -324,6 +345,7 @@ export default function App() {
           <CheckoutReturn
             documents={documents}
             checkouts={checkouts}
+            users={users}
             currentUser={user}
             onRefresh={fetchAllData}
             selectedDocForCheckout={selectedDocForCheckout}
@@ -365,7 +387,7 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className="bg-white border-t border-slate-200 py-3 text-center text-[10px] text-slate-400 select-none shrink-0 font-mono">
-        © 2026 Bitcoin Credential Digital File Storage System (BCD-FSS). Secure Node Status: Active & Official
+        © 2026 MITCON Credentia. Secure Node Status: Active & Official
       </footer>
 
       {/* Reusable Custom Confirmation Modal */}
@@ -382,7 +404,7 @@ export default function App() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-100">{confirmModal.title}</h3>
-                <p className="text-[10px] text-slate-500 font-mono">BCD-FSS CRYPTO SECURITY</p>
+                <p className="text-[10px] text-slate-500 font-mono">MITCON CREDENTIA SECURITY</p>
               </div>
             </div>
 

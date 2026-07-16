@@ -83,7 +83,7 @@ export class UserProfileDto {
     this.id = userRecord.id;
     this.email = userRecord.email;
     this.name = userRecord.name || null;
-    this.role = userRecord.role || 'VIEWER';
+    this.role = userRecord.role || 'EDITOR';
     this.createdAt = userRecord.createdAt;
   }
 
@@ -484,7 +484,6 @@ export class PermissionResponseDto {
 export const RBAC_ROLES = {
   ADMIN: 'ADMIN',
   EDITOR: 'EDITOR',
-  VIEWER: 'VIEWER',
 };
 
 /**
@@ -548,31 +547,6 @@ export const ROLE_PERMISSIONS_MAP = {
     RBAC_PERMISSIONS.AUDIT_VIEW,
     RBAC_PERMISSIONS.AUDIT_EXPORT,
     RBAC_PERMISSIONS.AUDIT_SECURITY_VIEW,
-  ],
-  [RBAC_ROLES.VIEWER]: [
-    RBAC_PERMISSIONS.DOCUMENTS_READ,
-    RBAC_PERMISSIONS.CHECKOUT_VIEW,
-    RBAC_PERMISSIONS.CHECKOUT_CANCEL,
-    RBAC_PERMISSIONS.APPROVAL_VIEW,
-    RBAC_PERMISSIONS.SIGNATURE_VIEW,
-    RBAC_PERMISSIONS.AUDIT_VIEW,
-  ],
-  USER: [
-    RBAC_PERMISSIONS.DOCUMENTS_READ,
-    RBAC_PERMISSIONS.CHECKOUT_CREATE,
-    RBAC_PERMISSIONS.CHECKOUT_VIEW,
-    RBAC_PERMISSIONS.CHECKOUT_UPDATE,
-    RBAC_PERMISSIONS.CHECKOUT_CANCEL,
-    RBAC_PERMISSIONS.CHECKOUT_MANAGE,
-    RBAC_PERMISSIONS.APPROVAL_CREATE,
-    RBAC_PERMISSIONS.APPROVAL_VIEW,
-    RBAC_PERMISSIONS.APPROVAL_UPDATE,
-    RBAC_PERMISSIONS.APPROVAL_APPROVE,
-    RBAC_PERMISSIONS.APPROVAL_REJECT,
-    RBAC_PERMISSIONS.SIGNATURE_CREATE,
-    RBAC_PERMISSIONS.SIGNATURE_VIEW,
-    RBAC_PERMISSIONS.SIGNATURE_REVOKE,
-    RBAC_PERMISSIONS.AUDIT_VIEW,
   ],
 };
 
@@ -806,7 +780,7 @@ export class RoleResolutionService {
       where: { id: userId },
       select: { role: true },
     });
-    return user?.role || RBAC_ROLES.VIEWER;
+    return user?.role || RBAC_ROLES.EDITOR;
   }
 }
 
@@ -1225,7 +1199,7 @@ export class AuthService {
         data: {
           id: userUuid,
           email: data.user.email,
-          role: 'VIEWER',
+          role: 'EDITOR',
         },
       });
     }
@@ -1307,7 +1281,7 @@ export class AuthService {
         data: {
           id: userUuid,
           email: data.user.email,
-          role: 'VIEWER',
+          role: 'EDITOR',
         },
       });
     }
@@ -1442,7 +1416,7 @@ export class AuthService {
         data: {
           id: userId,
           email: supabaseUser.email,
-          role: 'VIEWER',
+          role: 'EDITOR',
         },
       });
     }
@@ -1471,7 +1445,7 @@ export class AuthService {
 
     const { data, error } = await tempClient.auth.mfa.enroll({
       factorType: 'totp',
-      issuer: 'MITCON BCD-FSS',
+      issuer: 'MITCON Credentia',
     });
 
     if (error) {

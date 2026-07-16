@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type UserRole = 'super-admin' | 'admin' | 'user' | 'developer';
+export type UserRole = 'super-admin' | 'admin' | 'developer';
 
 export interface User {
   id: string;
@@ -13,19 +13,21 @@ export interface User {
   avatarUrl?: string;
   createdAt: string;
   status: 'active' | 'suspended';
+  designation?: string;
 }
 
 export interface Document {
   id: string;
-  documentId: string; // enterprise style custom ID e.g., DOC-HR-002
+  documentId: string;
   documentName: string;
-  owner: string;
   dateUploaded: string;
   expiryDate?: string;
   filePath: string;
   status: 'Draft' | 'Pending Approval' | 'Approved' | 'Rejected' | 'Checked Out' | 'Returned' | 'Archived';
   uploadedBy: string;
-  client?: string;
+  client: string;
+  dateOfRegistration: string;
+  placeOfHolding: string;
 }
 
 export interface Checkout {

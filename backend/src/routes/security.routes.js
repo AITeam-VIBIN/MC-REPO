@@ -16,14 +16,20 @@ router.get('/users', async (req, res) => {
 router.post('/users', async (req, res) => {
   const body = req.body;
   try {
+    const email = (body.email || "").trim().toLowerCase();
+    if (!email.endsWith('@mitconindia.com') && !email.endsWith('@mitconcredentia.in')) {
+      return res.status(400).json({ message: "Invalid email domain. Authorized organizational domains are: @mitconindia.com or @mitconcredentia.in" });
+    }
+
     const newUser = await prisma.user.create({
       data: {
         id: `usr-${Date.now()}`,
         name: body.name,
-        email: body.email,
-        role: body.role || "user",
+        email: email,
+        role: body.role || "developer",
         createdAt: new Date(),
-        status: "active"
+        status: "active",
+        designation: body.designation || null
       }
     });
 

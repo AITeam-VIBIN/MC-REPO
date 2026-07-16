@@ -136,21 +136,11 @@ export class ReportService {
     // Validate and enforce role based filters access
     if (user.role === 'ADMIN') {
       // Super Admin: allows arbitrary filtering
-    } else if (user.role === 'EDITOR') {
+    } else {
       // Admin/Editor: Restrict report to their own department
       if (targetFilters.department && targetFilters.department !== userDept) {
         throw new ReportServiceError('Access denied: EDITOR can only generate reports for their own department.', 'ACCESS_DENIED');
       }
-      targetFilters.department = userDept;
-    } else {
-      // VIEWER: Restrict to their own user ID and department
-      if (targetFilters.userId && targetFilters.userId !== user.id) {
-        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own activity.', 'ACCESS_DENIED');
-      }
-      if (targetFilters.department && targetFilters.department !== userDept) {
-        throw new ReportServiceError('Access denied: VIEWER can only generate reports for their own department.', 'ACCESS_DENIED');
-      }
-      targetFilters.userId = user.id;
       targetFilters.department = userDept;
     }
 
@@ -360,20 +350,12 @@ export class ReportService {
     const dbUser = await this.reportRepository.getUserWithDepartment(user.id);
     const userDept = dbUser?.department?.name || null;
 
-    // EDITOR can access reports within their own department or their own creations
-    if (user.role === 'EDITOR') {
-      if (report.departmentSnapshot === userDept || report.userId === user.id) {
-        return reportUtil.formatReportResponse(report);
-      }
-      throw new ReportServiceError('Access denied: Department scope mismatch.', 'FORBIDDEN');
-    }
-
-    // VIEWER can only access their own reports
-    if (report.userId === user.id) {
+    // EDITOR/Default can access reports within their own department or their own creations
+    if (report.departmentSnapshot === userDept || report.userId === user.id) {
       return reportUtil.formatReportResponse(report);
     }
 
-    throw new ReportServiceError('Access denied: Report is restricted to owner.', 'FORBIDDEN');
+    throw new ReportServiceError('Access denied: Department scope mismatch or restricted.', 'FORBIDDEN');
   }
 
   /**

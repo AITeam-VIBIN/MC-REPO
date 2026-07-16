@@ -111,7 +111,7 @@
           "fileSize": "4.5 MB"
         }
       ],
-      "project": "BCD-FSS Core",
+      "project": "MITCON Credentia Core",
       "client": "Internal Core"
     },
     {
@@ -178,7 +178,7 @@
     {
       "id": "not-1",
       "title": "System Seeding Active",
-      "message": "Welcome to MITCON Credential Digital File Storage System (BCD-FSS). The secure node is fully synchronized.",
+      "message": "Welcome to MITCON Credentia. The secure node is fully synchronized.",
       "status": "unread",
       "timestamp": "2026-07-15T05:35:17.938Z"
     }
