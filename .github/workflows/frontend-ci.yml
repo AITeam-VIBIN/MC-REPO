@@ -173,7 +173,7 @@ jobs:
           npm ci
           npx prisma generate
           npx prisma db push
-          npm run seed
+          npm run db:seed
 
       - name: Start Backend Server
         working-directory: backend
