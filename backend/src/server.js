@@ -126,14 +126,22 @@ async function startBootstrap() {
       console.warn('⚠️ Supabase Storage connection failed:', storageErr.message);
     }
 
-    const isReady = dbReady && (NODE_ENV !== 'production' || (redisReady && storageReady));
-
-    if (!isReady) {
-      console.error('❌ Startup Health Check: FAILED');
-      if (NODE_ENV === 'production') {
-        process.exit(1);
-      }
+    // Only database is truly required — Redis and Storage run in degraded mode if unavailable
+    if (!dbReady) {
+      console.error('❌ Startup Health Check: FAILED — Database is unreachable. Cannot start.');
+      process.exit(1);
     }
+
+    if (!redisReady) {
+      console.warn('⚠️  Redis unavailable — background jobs and real-time features disabled.');
+    }
+
+    if (!storageReady) {
+      console.warn('⚠️  Supabase Storage unavailable — file upload features disabled.');
+    }
+
+    console.log(`✅ Startup Health Check: PASSED (db=${dbReady}, redis=${redisReady}, storage=${storageReady})`);
+
 
     // Initialize Socket.IO server
     initSocketServer(server);
