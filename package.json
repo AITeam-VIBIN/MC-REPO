@@ -4,7 +4,7 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build:backend": "cd backend && npm ci && npm run build && cd ..",
-    "build:frontend": "npm run build --prefix frontend",
+    "build:frontend": "cd frontend && npm ci --legacy-peer-deps && npm run build && cd ..",
     "build": "npm run build:backend && npm run build:frontend",
     "start": "npm run start:backend",
     "start:backend": "npm start --prefix backend",
