@@ -1,0 +1,14 @@
+[phases.setup]
+# openssl: required by Prisma linux-musl-openssl-3.0.x engine at runtime
+nixPkgs = ["nodejs_22", "openssl"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+# Generate Prisma client with the correct engine binary for Alpine/Linux
+cmds = ["npx prisma generate"]
+
+[start]
+# rootDirectory=/backend so we are already inside backend/ — no cd needed
+cmd = "node src/server.js"
