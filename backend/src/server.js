@@ -2,7 +2,6 @@ import { createServer } from 'http';
 import dotenv from 'dotenv';
 import app from './app.js';
 import { shutdownQueuesAndWorkers } from './jobs/index.js';
-import redis from './config/redis.js';
 import { initSocketServer, getIO } from './config/socket.js';
 import { prisma } from './config/database.js';
 import { supabaseAdmin } from './config/supabase.js';
@@ -20,107 +19,90 @@ const server = createServer(app);
 // ==========================================
 
 /**
- * Executes a graceful server shutdown. Closes incoming network ports
- * and disconnects downstream connection pools (Postgres, Redis, Workers).
- * 
+ * Executes a graceful server shutdown.
+ * Closes HTTP, Socket.IO, BullMQ workers, and Prisma in order.
+ *
  * @async
- * @function handleGracefulShutdown
- * @param {string} signal - The OS signal intercepted (e.g. SIGINT, SIGTERM)
- * @returns {Promise<void>}
+ * @param {string} signal - OS signal (SIGINT, SIGTERM)
  */
 async function handleGracefulShutdown(signal) {
-  console.log(`\n[${signal}] Graceful shutdown sequence initiated...`);
+  console.log(`\n[${signal}] Graceful shutdown initiated...`);
 
-  // Refuse new incoming HTTP connections while processing existing pipelines
   server.close(async () => {
-    console.log('HTTP connection ports successfully closed.');
-
+    console.log('HTTP server closed.');
     try {
-      // Close Socket.IO server connections
       const io = getIO();
       if (io) {
         io.close();
         console.log('Socket.IO server closed.');
       }
 
-      // 1. Gracefully stop BullMQ queue connections and worker processes
       await shutdownQueuesAndWorkers();
 
-      // 2. Disconnect the main Redis ioredis client
-      await redis.quit();
-      console.log('Redis cache client connection closed.');
+      await prisma.$disconnect();
+      console.log('Database disconnected.');
 
-      // PLACEHOLDER: Disconnect Prisma database client
-      // await prisma.$disconnect();
-      // console.log('Database client disconnected.');
-
-      console.log('Graceful cleanup completed. Exiting process.');
+      console.log('Shutdown complete.');
       process.exit(0);
     } catch (err) {
-      console.error('Error encountered during database/cache resource cleanup:', err);
+      console.error('Error during shutdown:', err);
       process.exit(1);
     }
   });
 
-  // Forcefully terminate process after a 10-second safety timeout
+  // Force-kill if shutdown takes longer than 10s
   setTimeout(() => {
-    console.error('Forced shutdown triggered: Cleanup took too long.');
+    console.error('Forced shutdown: cleanup timeout.');
     process.exit(1);
   }, 10000);
 }
 
-// OS system signal hooks
+// OS signal handlers
 process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
+process.on('SIGINT',  () => handleGracefulShutdown('SIGINT'));
 
-// Transient network error codes that must NOT crash the process
-// These are primarily ioredis errors that fire when Redis loses connectivity
-const TRANSIENT_ERROR_CODES = new Set([
+// ==========================================
+// Process-Level Safety Net
+// Catch any Redis/TCP errors that escape all
+// other handlers — prevents container crashes
+// ==========================================
+
+const TRANSIENT_CODES = new Set([
   'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND',
-  'ETIMEDOUT', 'EHOSTUNREACH', 'EPIPE', 'ECONNABORTED',
+  'ETIMEDOUT',  'EHOSTUNREACH', 'EPIPE', 'ECONNABORTED',
 ]);
 
-// Uncaught system-level runtime monitors
 process.on('unhandledRejection', (reason) => {
-  // Don't crash for transient Redis/network connection rejections
-  if (reason && TRANSIENT_ERROR_CODES.has(reason.code)) {
-    console.warn(`[Process] Swallowed transient unhandledRejection (${reason.code}): ${reason.message}`);
+  if (reason && TRANSIENT_CODES.has(reason.code)) {
+    // Swallow Redis/TCP rejections silently — server keeps running
     return;
   }
-  console.error('[Process] Unhandled Promise Rejection:', reason);
+  console.error('[Process] Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  // Redis ECONNRESET and other transient TCP errors must NEVER crash the server.
-  // They are emitted by ioredis when the connection drops and should be handled
-  // at the client level. If they escape here, swallow them safely.
-  if (TRANSIENT_ERROR_CODES.has(error.code)) {
-    console.warn(`[Process] Swallowed transient uncaughtException (${error.code}): ${error.message}`);
-    return; // Do NOT exit — server stays alive
+  if (TRANSIENT_CODES.has(error.code)) {
+    // Last-resort catch for Redis ECONNRESET — do NOT crash
+    return;
   }
-  // For genuinely fatal errors (syntax, type errors, etc.) — crash fast
-  console.error('[Process] Fatal uncaughtException — shutting down:', error);
+  // Truly fatal errors (syntax, type, etc.) — exit cleanly
+  console.error('[Process] Fatal exception — shutting down:', error);
   process.exit(1);
 });
 
 // ==========================================
-// Application Bootstrap Initiation
+// Application Bootstrap
 // ==========================================
 
 /**
- * Tests downstream infrastructure bindings and boots up the Express HTTP server.
- * 
- * @async
- * @function startBootstrap
- * @returns {Promise<void>}
+ * Checks core infrastructure and starts the HTTP server.
+ * Only the database is required — storage is optional.
+ * Redis is fully removed from this flow.
  */
 async function startBootstrap() {
   try {
+    // ── 1. Database (required) ──────────────────────────────────────────────
     let dbReady = false;
-    let redisReady = false;
-    let storageReady = false;
-
-    // Verify Prisma database connection
     try {
       await prisma.$queryRaw`SELECT 1`;
       dbReady = true;
@@ -128,50 +110,33 @@ async function startBootstrap() {
       console.error('❌ Database connection failed:', dbErr.message);
     }
 
-    // Verify Redis connection client gracefully
-    try {
-      await redis.ping();
-      redisReady = true;
-    } catch (redisErr) {
-      console.warn('⚠️ Redis Cache connection failed. Background job workers may be offline.');
-    }
-
-    // Verify Supabase Storage connection
-    try {
-      const { data, error } = await supabaseAdmin.storage.listBuckets();
-      if (error) throw error;
-      storageReady = true;
-    } catch (storageErr) {
-      console.warn('⚠️ Supabase Storage connection failed:', storageErr.message);
-    }
-
-    // Only database is truly required — Redis and Storage run in degraded mode if unavailable
     if (!dbReady) {
-      console.error('❌ Startup Health Check: FAILED — Database is unreachable. Cannot start.');
+      console.error('❌ Startup FAILED — Database unreachable. Cannot start.');
       process.exit(1);
     }
 
-    if (!redisReady) {
-      console.warn('⚠️  Redis unavailable — background jobs and real-time features disabled.');
+    // ── 2. Supabase Storage (optional) ──────────────────────────────────────
+    let storageReady = false;
+    try {
+      const { error } = await supabaseAdmin.storage.listBuckets();
+      if (error) throw error;
+      storageReady = true;
+    } catch {
+      console.warn('⚠️  Supabase Storage unavailable — file uploads disabled.');
     }
 
-    if (!storageReady) {
-      console.warn('⚠️  Supabase Storage unavailable — file upload features disabled.');
-    }
+    console.log(`✅ Startup Health Check: PASSED (db=${dbReady}, storage=${storageReady}, redis=disabled)`);
 
-    console.log(`✅ Startup Health Check: PASSED (db=${dbReady}, redis=${redisReady}, storage=${storageReady})`);
-
-
-    // Initialize Socket.IO server
+    // ── 3. Socket.IO ─────────────────────────────────────────────────────────
     initSocketServer(server);
 
-    // Bind to 0.0.0.0 explicitly — required for Railway, Render, and container runtimes
-    // Without this, the server only listens on localhost and is unreachable from Railway's router
+    // ── 4. Listen on all interfaces (required for Railway/containers) ────────
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on http://0.0.0.0:${PORT} [${NODE_ENV}]`);
     });
+
   } catch (err) {
-    console.error('❌ Critical bootstrap initiation failure:', err);
+    console.error('❌ Critical bootstrap failure:', err);
     process.exit(1);
   }
 }

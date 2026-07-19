@@ -34,8 +34,8 @@ const envSchema = z.object({
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
-  REDIS_URL: z.string().url().default('redis://localhost:6379'),
-  REDIS_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default('true'),
+  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default('false'),
 
   CORS_ORIGIN: z.string().optional(),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
