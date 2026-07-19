@@ -22,9 +22,16 @@ export function initSocketServer(httpServer) {
     console.error('[Socket.IO] Failed to load Realtime Service:', err);
   });
 
+  // Parse the same CORS_ORIGINS env used by HTTP cors config
+  // Supports comma-separated list for multi-domain Railway deployments
+  const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173')
+    .split(',')
+    .map(o => o.trim().replace(/^[\"']|[\"']$/g, ''))
+    .filter(Boolean);
+
   io = new Server(httpServer, {
     cors: {
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
       credentials: true,
     },

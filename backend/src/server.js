@@ -146,7 +146,11 @@ async function startBootstrap() {
     // Initialize Socket.IO server
     initSocketServer(server);
 
-    server.listen(PORT);
+    // Bind to 0.0.0.0 explicitly — required for Railway, Render, and container runtimes
+    // Without this, the server only listens on localhost and is unreachable from Railway's router
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on http://0.0.0.0:${PORT} [${NODE_ENV}]`);
+    });
   } catch (err) {
     console.error('❌ Critical bootstrap initiation failure:', err);
     process.exit(1);
