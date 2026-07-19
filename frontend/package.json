@@ -13,7 +13,7 @@
     "test": "node src/tests/run-tests.js",
     "test:ci": "npm test",
     "preview": "vite preview",
-    "prepare": "husky install",
+    "prepare": "node -e \"if(process.env.CI || process.env.RAILWAY_ENVIRONMENT){process.exit(0)}\" || husky install",
     "cypress:open": "cypress open",
     "cypress:run": "cypress run"
   },
