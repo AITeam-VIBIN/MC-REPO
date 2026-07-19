@@ -5,7 +5,7 @@
     "buildCommand": "cd backend && npm ci && npx prisma generate"
   },
   "deploy": {
-    "startCommand": "cd backend && node src/server.js",
+    "startCommand": "node src/server.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
