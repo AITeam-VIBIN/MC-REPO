@@ -3,7 +3,7 @@ import env from './env.js';
 
 let mainRedisInstance = null;
 
-// Non-fatal error codes that should NOT crash the process
+// Non-fatal Redis/TCP error codes — must NEVER crash the process
 const TRANSIENT_ERROR_CODES = new Set([
   'ECONNRESET',
   'ECONNREFUSED',
@@ -11,71 +11,82 @@ const TRANSIENT_ERROR_CODES = new Set([
   'ETIMEDOUT',
   'EHOSTUNREACH',
   'EPIPE',
+  'ECONNABORTED',
 ]);
 
 /**
- * Registers standard event listeners on a Redis client.
- * Each client instance has its own warning flag to prevent console spam.
- * Uses per-instance state so BullMQ's 12+ clients all suppress independently.
+ * Attaches error + reconnect listeners to a Redis client.
+ * Also wraps client.duplicate() so cloned clients (used internally by BullMQ)
+ * always inherit error handlers — preventing uncaughtException crashes.
  *
- * @param {Redis} client - The Redis client instance
- * @returns {Redis} The same client instance
+ * @param {Redis} client - The ioredis client instance
+ * @returns {Redis} The same client with listeners attached
  */
 function configureClientListeners(client) {
   let hasWarned = false;
 
   client.on('error', (err) => {
-    // Swallow transient network errors — do NOT let them bubble to process.on('uncaughtException')
+    // Swallow transient TCP/network errors entirely.
+    // Without this listener, Node.js throws them as uncaughtException and crashes.
     if (TRANSIENT_ERROR_CODES.has(err.code)) {
       if (!hasWarned) {
-        console.warn(`[Redis] Connection error (${err.code}): ${err.message}`);
-        console.warn('[Redis] Running in degraded mode — background jobs and real-time locks offline.');
+        console.warn(`[Redis] Connection error (${err.code}) — degraded mode active. Background jobs offline.`);
         hasWarned = true;
       }
-      return; // Explicitly swallow — ioredis emits these as non-fatal
+      return; // Swallowed — do NOT re-throw
     }
-    // Log unexpected errors once
+    // Non-transient: log once but still don't crash
     if (!hasWarned) {
       console.warn(`[Redis] Unexpected error: ${err.message}`);
       hasWarned = true;
     }
   });
 
-  client.on('reconnecting', (delay) => {
-    // Suppress reconnect noise in production
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[Redis] Reconnecting in ${delay}ms...`);
-    }
+  client.on('reconnecting', () => {
+    // Suppress reconnect noise in production logs
   });
+
+  // ─── CRITICAL FIX ─────────────────────────────────────────────────────────
+  // BullMQ calls client.duplicate() internally to create subscriber/publisher
+  // sub-connections. The default ioredis .duplicate() returns a raw new Redis
+  // instance with NO error handlers — causing uncaughtException on ECONNRESET.
+  // We override .duplicate() so every cloned client also gets our error handler.
+  const originalDuplicate = client.duplicate.bind(client);
+  client.duplicate = function (...args) {
+    const cloned = originalDuplicate(...args);
+    return configureClientListeners(cloned);
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   return client;
 }
 
 /**
- * Builds ioredis connection options from the REDIS_URL.
- * Automatically enables TLS for rediss:// URLs (required by Railway Redis).
+ * Builds ioredis connection options.
+ * Auto-detects TLS for Railway's rediss:// URLs.
+ * Retry strategy stops after 10 attempts to prevent infinite ECONNRESET loops.
  *
  * @returns {Object} ioredis constructor options
  */
 function buildRedisOptions() {
-  const redisUrl = env.REDIS_URL;
+  const redisUrl = env.REDIS_URL || '';
   const isTLS = redisUrl.startsWith('rediss://');
 
   return {
-    // Required by BullMQ — null means unlimited pipeline retries
-    maxRetriesPerRequest: null,
-    // Disable ready check so server starts even if Redis is slow to connect
-    enableReadyCheck: false,
-    // Reconnect strategy: exponential backoff capped at 30s, max 10 attempts
-    // Returns null after 10 attempts to stop retrying and prevent ECONNRESET spam
+    maxRetriesPerRequest: null,   // Required by BullMQ
+    enableReadyCheck: false,      // Don't block startup waiting for Redis
+    lazyConnect: false,
     retryStrategy(times) {
-      if (times > 10) {
-        // Stop retrying — connection is definitively unavailable
-        return null;
-      }
+      // Stop retrying after 10 attempts — return null = give up gracefully
+      if (times > 10) return null;
+      // Exponential backoff: 500ms → 1s → 2s … capped at 30s
       return Math.min(times * 500, 30000);
     },
-    // Auto-enable TLS for Railway's rediss:// connections
+    reconnectOnError(err) {
+      // Only reconnect on specific recoverable errors
+      return TRANSIENT_ERROR_CODES.has(err.code) ? 1 : false;
+    },
+    // Auto-enable TLS for Railway's rediss:// URLs
     ...(isTLS && {
       tls: {
         rejectUnauthorized: false, // Railway uses self-signed certs
@@ -85,26 +96,34 @@ function buildRedisOptions() {
 }
 
 /**
- * Creates a new, configured Redis connection client instance.
- * Suitable for queues and workers that require dedicated client channels.
+ * Creates a new configured Redis client with full error handling.
+ * Returns a mock client when Redis is disabled (REDIS_ENABLED=false).
  *
- * @function createRedisClient
- * @returns {Redis|Object} A configured Redis connection client instance (or mock if disabled)
+ * @returns {Redis|Object}
  */
 export function createRedisClient() {
   if (!env.REDIS_ENABLED) {
-    // Return mock Redis client if Redis is disabled (local dev without Redis)
-    return {
+    // Fully-typed mock — all methods ioredis exposes that BullMQ relies on
+    const mock = {
+      status: 'ready',
       connect: async () => {},
       disconnect: async () => {},
       quit: async () => {},
       ping: async () => 'PONG',
-      on: () => {},
-      off: () => {},
-      emit: () => {},
-      // BullMQ calls .duplicate() — return another mock to prevent crashes
+      get: async () => null,
+      set: async () => 'OK',
+      setex: async () => 'OK',
+      del: async () => 0,
+      keys: async () => [],
+      on: () => mock,
+      off: () => mock,
+      once: () => mock,
+      emit: () => false,
+      removeListener: () => mock,
+      // BullMQ calls .duplicate() on its connections — return another mock
       duplicate: () => createRedisClient(),
     };
+    return mock;
   }
 
   const client = new Redis(env.REDIS_URL, buildRedisOptions());
@@ -112,11 +131,10 @@ export function createRedisClient() {
 }
 
 /**
- * Retrieves the singleton Redis Cache client.
- * Ensures only one general cache connection exists.
+ * Singleton Redis cache client.
+ * One shared connection for general key-value cache operations.
  *
- * @function getRedisClient
- * @returns {Redis|Object} Singleton Redis Client connection instance (or mock if disabled)
+ * @returns {Redis|Object}
  */
 export function getRedisClient() {
   if (!mainRedisInstance) {

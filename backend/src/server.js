@@ -73,14 +73,33 @@ async function handleGracefulShutdown(signal) {
 process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
 
+// Transient network error codes that must NOT crash the process
+// These are primarily ioredis errors that fire when Redis loses connectivity
+const TRANSIENT_ERROR_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND',
+  'ETIMEDOUT', 'EHOSTUNREACH', 'EPIPE', 'ECONNABORTED',
+]);
+
 // Uncaught system-level runtime monitors
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Promise Rejection detected at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+  // Don't crash for transient Redis/network connection rejections
+  if (reason && TRANSIENT_ERROR_CODES.has(reason.code)) {
+    console.warn(`[Process] Swallowed transient unhandledRejection (${reason.code}): ${reason.message}`);
+    return;
+  }
+  console.error('[Process] Unhandled Promise Rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception detected:', error);
-  // Immediately exit on uncaught synchronous errors to avoid runtime corruption
+  // Redis ECONNRESET and other transient TCP errors must NEVER crash the server.
+  // They are emitted by ioredis when the connection drops and should be handled
+  // at the client level. If they escape here, swallow them safely.
+  if (TRANSIENT_ERROR_CODES.has(error.code)) {
+    console.warn(`[Process] Swallowed transient uncaughtException (${error.code}): ${error.message}`);
+    return; // Do NOT exit — server stays alive
+  }
+  // For genuinely fatal errors (syntax, type errors, etc.) — crash fast
+  console.error('[Process] Fatal uncaughtException — shutting down:', error);
   process.exit(1);
 });
 
